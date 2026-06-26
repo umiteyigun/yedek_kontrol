@@ -729,6 +729,8 @@
     });
   }
 
+  const yedekBase = window.__YEDEK_BASE__ || '';
+
   async function loadSchemaPickerList() {
     if (!schemaState.instanceId || schemaState.loading) {
       return;
@@ -736,7 +738,7 @@
     schemaState.loading = true;
     setSchemaStatus('Oracle schema listesi yukleniyor...', 'loading');
     try {
-      const response = await fetch('/ayarlar/instance/' + encodeURIComponent(schemaState.instanceId) + '/schemas/list', {
+      const response = await fetch(yedekBase + '/ayarlar/instance/' + encodeURIComponent(schemaState.instanceId) + '/schemas/list', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: '{}',
@@ -1139,7 +1141,7 @@
     renderFtpBreadcrumb(targetPath);
 
     try {
-      const response = await fetch('/ayarlar/instance/' + encodeURIComponent(ftpState.instanceId) + '/ftp/browse', {
+      const response = await fetch(yedekBase + '/ayarlar/instance/' + encodeURIComponent(ftpState.instanceId) + '/ftp/browse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
@@ -1206,7 +1208,7 @@
     ftpStatus.className = 'ftp-browser-status loading';
 
     try {
-      const response = await fetch('/ayarlar/instance/' + encodeURIComponent(ftpState.instanceId) + '/ftp/delete', {
+      const response = await fetch(yedekBase + '/ayarlar/instance/' + encodeURIComponent(ftpState.instanceId) + '/ftp/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
