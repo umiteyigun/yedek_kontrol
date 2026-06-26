@@ -1,0 +1,329 @@
+#!/bin/bash
+# =============================================================================
+# TRTEK Yedek Scripti v2.1 - coklu Oracle instance
+# Kullanim: yedek.sh GUNLUK|HAFTALIK [instance_id]
+# instance_id verilmezse instances.list icindeki tum aktif instance'lar sirayla alinir.
+# =============================================================================
+set -euo pipefail
+
+readonly CONFIG_DIR="/yedek/config"
+readonly PARAMS_FILE="${CONFIG_DIR}/yedek-params.sh"
+readonly CONFIG_FILE="${CONFIG_DIR}/yedekconfig.sh"
+readonly INSTANCES_DIR="${CONFIG_DIR}/instances"
+readonly INSTANCES_LIST="${CONFIG_DIR}/instances.list"
+
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
+die() { log "HATA: $*"; exit 1; }
+
+[[ -f "$PARAMS_FILE" ]] || die "Bulunamadi: $PARAMS_FILE (once panelden ayarlari kaydedin)"
+[[ -f "$CONFIG_FILE" ]] || die "Bulunamadi: $CONFIG_FILE (once panelden ayarlari kaydedin)"
+[[ -d "$INSTANCES_DIR" ]] || die "Instance dizini yok: $INSTANCES_DIR"
+
+# shellcheck source=/dev/null
+source "$PARAMS_FILE"
+# shellcheck source=/dev/null
+source "$CONFIG_FILE"
+
+yedektipi="${1:-}"
+only_instance="${2:-}"
+[[ -n "$yedektipi" ]] || die "Kullanim: yedek.sh GUNLUK|HAFTALIK [instance_id]"
+[[ "$yedektipi" == "GUNLUK" || "$yedektipi" == "HAFTALIK" ]] || die "Gecersiz tip: ${yedektipi}"
+
+sendftpfile() {
+  local server="$1" user="$2" pass="$3" ftplog="$4" src="$5" target="$6" remote_dir="${7:-/}"
+  local ftp_cd=""
+
+  remote_dir="${remote_dir:-/}"
+  remote_dir="${remote_dir// /}"
+  if [[ -z "$remote_dir" ]]; then
+    remote_dir="/"
+  elif [[ "$remote_dir" != /* ]]; then
+    remote_dir="/${remote_dir}"
+  fi
+  if [[ "$remote_dir" != "/" ]]; then
+    remote_dir="${remote_dir%/}"
+    ftp_cd="cd ${remote_dir}"
+  fi
+
+  ftp -v -n "$server" <<END_SCRIPT >"$ftplog" 2>&1
+quote USER ${user}
+quote PASS ${pass}
+binary
+${ftp_cd}
+put ${src} ${target}
+quit
+END_SCRIPT
+  if grep -qE "226 |226-" "$ftplog" 2>/dev/null; then
+    echo "1"
+  else
+    echo "0"
+  fi
+}
+
+upload_backup_artifact() {
+  local artifact_path="$1"
+  local remote_name="$2"
+  local ftp_ok=1
+  local total_size=0
+  local first_name=""
+
+  if [[ "${backup_split_enabled:-0}" == "1" ]]; then
+    local split_mb="${backup_split_size_mb:-2048}"
+    local part_prefix="${artifact_path}.part_"
+    log "Buyuk dosya bolunuyor [${INSTANCE_ID}]: ${split_mb}MB parcalar"
+    split -b "${split_mb}M" -a 3 -d "$artifact_path" "$part_prefix"
+    rm -f "$artifact_path"
+    shopt -s nullglob
+    local parts=( "${artifact_path}.part_"* )
+    shopt -u nullglob
+    if [[ ${#parts[@]} -eq 0 ]]; then
+      die "Split basarisiz: ${artifact_path}"
+    fi
+    for part in "${parts[@]}"; do
+      local part_name
+      part_name="$(basename "$part")"
+      [[ -z "$first_name" ]] && first_name="$part_name"
+      local part_stat
+      part_stat=$(sendftpfile \
+        "$localftpip" "$localftpuser" "$localftppass" \
+        "$ftplog2" \
+        "$part" "$part_name" "${localftpdir:-/}")
+      [[ "$part_stat" != "1" ]] && ftp_ok=0
+      local psz
+      psz=$(stat -c%s "$part" 2>/dev/null || echo 0)
+      total_size=$((total_size + psz))
+    done
+    upload_dosyaadi="${first_name} (+${#parts[@]} parca)"
+    filesize=$total_size
+    if [[ "$ftp_ok" == "1" ]]; then
+      localftpstat="1"
+    else
+      localftpstat="0"
+    fi
+    return 0
+  fi
+
+  localftpstat=$(sendftpfile \
+    "$localftpip" "$localftpuser" "$localftppass" \
+    "$ftplog2" \
+    "$artifact_path" "$remote_name" "${localftpdir:-/}")
+  filesize=$(stat -c%s "$artifact_path" 2>/dev/null || echo "-1")
+  upload_dosyaadi="$remote_name"
+}
+
+notify_backup() {
+  local api_url="http://127.0.0.1:${core_port:-8090}/api/YedekYonetimi/YedekBildirimi"
+  local resp_file="${directorydizini}.api-response"
+  local disk1 disk2 disk3 disip http_code
+  local disk_report_script="${CONFIG_DIR}/disk-report.sh"
+
+  if [[ -x "$disk_report_script" ]]; then
+    # shellcheck disable=SC2046
+    eval "$("$disk_report_script" "${directorydizini}")"
+  else
+    disk1=$(df -h / 2>/dev/null | awk 'NR==2 {print $5}')
+    disk1=${disk1:-0%}
+    disk2=0
+    disk3=0
+  fi
+
+  disip=$(curl -sf --max-time 8 ifconfig.co 2>/dev/null || true)
+  if [[ -z "$disip" ]]; then
+    disip=$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null || true)
+  fi
+  if [[ -z "$disip" ]]; then
+    disip=$(hostname -I 2>/dev/null | awk '{print $1}')
+  fi
+  disip=${disip:-0.0.0.0}
+
+  log "API bildirimi [${INSTANCE_ID}]: ${api_url}"
+  http_code=$(curl -sS -G "$api_url" \
+    -w "%{http_code}" \
+    -o "$resp_file" \
+    --connect-timeout 10 \
+    --max-time 30 \
+    --data-urlencode "GuidKey=${guid_key}" \
+    --data-urlencode "YedekKodu=${yedek_kodu}" \
+    --data-urlencode "KurumNo=${kurumkodu}" \
+    --data-urlencode "Hastane=${hastane}" \
+    --data-urlencode "Il=${il}" \
+    --data-urlencode "Hostname=${hostname}" \
+    --data-urlencode "InstanceId=${INSTANCE_ID}" \
+    --data-urlencode "OracleSid=${ORACLE_SID}" \
+    --data-urlencode "Tarih=${trtektarih}" \
+    --data-urlencode "DisIp=${disip}" \
+    --data-urlencode "DiskAlani1=${disk1}" \
+    --data-urlencode "DiskAlani2=${disk2}" \
+    --data-urlencode "DiskAlani3=${disk3}" \
+    --data-urlencode "YedekBoyutu=${filesize}" \
+    --data-urlencode "Ftp=${localftpstat}" \
+    --data-urlencode "Mail=${mail_notify:-1}" \
+    --data-urlencode "YedekTipi=${yedektipi}" \
+    --data-urlencode "DosyaAdi=${upload_dosyaadi:-${gzipdosyaadi}}" \
+  ) || http_code="000"
+
+  if [[ "$http_code" == "200" ]]; then
+    log "API bildirimi OK [${INSTANCE_ID}] (HTTP 200)"
+  else
+    log "UYARI: API bildirimi basarisiz [${INSTANCE_ID}] (HTTP ${http_code})"
+  fi
+
+  {
+    echo "=== API Bildirimi $(date) instance=${INSTANCE_ID} ==="
+    echo "HTTP: ${http_code}"
+    cat "$resp_file" 2>/dev/null || true
+  } >> "${directorydizini}${logdosyaadi}" 2>/dev/null || true
+  rm -f "$resp_file"
+}
+
+backup_current_instance() {
+  [[ -n "${hastane:-}" ]] || die "Instance ${INSTANCE_ID}: hastane adi bos"
+  [[ -x "${ORACLE_HOME}/bin/expdp" ]] || die "expdp bulunamadi: ${ORACLE_HOME}/bin/expdp"
+
+  export ORACLE_SID
+  mkdir -p "$directorydizini"
+
+  backup_protect_mode="${backup_protect_mode:-gzip}"
+  backup_protect_pass="${backup_protect_pass:-}"
+  backup_split_enabled="${backup_split_enabled:-0}"
+  backup_split_size_mb="${backup_split_size_mb:-2048}"
+
+  tarih=$(date +%Y%m%d%H)
+  trtektarih=$(date +%Y%m%d)
+  yedekleme="${yedektipi}YEDEK"
+  kurum_slug="${backup_prefix:-${label:-${hastane:-${INSTANCE_ID}}}}"
+  kurumadi="${kurum_slug}${yedekleme}${tarih}"
+  dosyaadi="${kurumadi}."
+  dmpdosyaadi="${dosyaadi}dmp"
+  logdosyaadi="${dosyaadi}log"
+  gzipdosyaadi="${dosyaadi}dmp.gz"
+  zipdosyaadi="${kurumadi}.zip"
+  uploaddosyaadi=""
+  upload_dosyaadi=""
+  localftpstat="0"
+  filesize="-1"
+
+  if [[ "$backup_protect_mode" == "oracle" || "$backup_protect_mode" == "zip" ]]; then
+    [[ -n "$backup_protect_pass" ]] || die "Instance ${INSTANCE_ID}: yedek koruma sifresi bos (${backup_protect_mode})"
+  fi
+  if [[ "$backup_protect_mode" == "zip" ]]; then
+    command -v zip >/dev/null 2>&1 || die "zip komutu yok (setup.sh ile kurun)"
+  fi
+
+  log "Yedek basliyor [${INSTANCE_ID}]: sid=${ORACLE_SID} tip=${yedektipi} schema=${schemas} kurum=${hastane} mod=${backup_protect_mode} (SYSDBA)"
+
+  expdp_common=(
+    "$ORACLE_HOME/bin/expdp" userid='"/ as sysdba"'
+    directory="$directory" dumpfile="$dmpdosyaadi" logfile="$logdosyaadi"
+    job_name="${yedekleme}${tarih}"
+  )
+
+  case "$backup_protect_mode" in
+    oracle)
+      if [[ "$yedektipi" == "GUNLUK" ]]; then
+        "${expdp_common[@]}" schemas="$schemas" \
+          compression=all encryption=all encryption_mode=password \
+          encryption_password="$backup_protect_pass"
+      else
+        "${expdp_common[@]}" full=y flashback_time=systimestamp \
+          compression=all encryption=all encryption_mode=password \
+          encryption_password="$backup_protect_pass"
+      fi
+      ;;
+    zip)
+      if [[ "$yedektipi" == "GUNLUK" ]]; then
+        "${expdp_common[@]}" schemas="$schemas" compression=all
+      else
+        "${expdp_common[@]}" full=y flashback_time=systimestamp compression=all
+      fi
+      ;;
+    gzip|*)
+      if [[ "$yedektipi" == "GUNLUK" ]]; then
+        "${expdp_common[@]}" schemas="$schemas"
+      else
+        "${expdp_common[@]}" full=y flashback_time=systimestamp
+      fi
+      ;;
+  esac
+
+  if [[ -f "${directorydizini}.lst" ]]; then
+    cat "${directorydizini}.lst" >> "${directorydizini}${logdosyaadi}"
+    rm -f "${directorydizini}.lst"
+  fi
+  {
+    echo "=== Sistem bilgisi $(date) instance=${INSTANCE_ID} sid=${ORACLE_SID} mod=${backup_protect_mode} ==="
+    df -h
+    free -m 2>/dev/null || free
+  } >> "${directorydizini}${logdosyaadi}" 2>&1
+
+  artifact_path=""
+  case "$backup_protect_mode" in
+    oracle)
+      log "Oracle sifreli yedek sikistiriliyor [${INSTANCE_ID}]: ${directorydizini}${dmpdosyaadi}"
+      gzip -f "${directorydizini}${dmpdosyaadi}"
+      artifact_path="${directorydizini}${gzipdosyaadi}"
+      uploaddosyaadi="$gzipdosyaadi"
+      log "Oracle sifreli yedek hazir [${INSTANCE_ID}]: ${artifact_path}"
+      ;;
+    zip)
+      log "Zip sifreli arsiv olusturuluyor [${INSTANCE_ID}]"
+      zip -j -P "$backup_protect_pass" "${directorydizini}${zipdosyaadi}" "${directorydizini}${dmpdosyaadi}"
+      rm -f "${directorydizini}${dmpdosyaadi}"
+      artifact_path="${directorydizini}${zipdosyaadi}"
+      uploaddosyaadi="$zipdosyaadi"
+      ;;
+    gzip|*)
+      log "Sikistiriliyor [${INSTANCE_ID}]: ${directorydizini}${dmpdosyaadi}"
+      gzip -f "${directorydizini}${dmpdosyaadi}"
+      artifact_path="${directorydizini}${gzipdosyaadi}"
+      uploaddosyaadi="$gzipdosyaadi"
+      ;;
+  esac
+
+  [[ -f "$artifact_path" ]] || die "Yedek dosyasi olusmadi: ${artifact_path}"
+
+  sqlplus -s /nolog <<EOF >> "${directorydizini}${logdosyaadi}" 2>&1
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+CONNECT / AS SYSDBA
+SET PAGESIZE 100
+SELECT username, expiry_date FROM dba_users
+ WHERE username IN ('AKILU','SYSTEM')
+   AND expiry_date < SYSDATE + 60
+ ORDER BY username;
+EXIT;
+EOF
+
+  log "FTP yukleniyor [${INSTANCE_ID}]: ${localftpip}:${localftpdir:-/} -> ${uploaddosyaadi}"
+  upload_backup_artifact "$artifact_path" "$uploaddosyaadi"
+  gzipdosyaadi="${upload_dosyaadi:-$uploaddosyaadi}"
+
+  notify_backup
+  log "Yedek tamamlandi [${INSTANCE_ID}]: ${gzipdosyaadi} (${filesize} byte) FTP=${localftpstat} mod=${backup_protect_mode}"
+}
+
+run_instance_file() {
+  local instance_file="$1"
+  # shellcheck source=/dev/null
+  source "$instance_file"
+  backup_current_instance
+}
+
+if [[ -n "$only_instance" ]]; then
+  instance_file="${INSTANCES_DIR}/${only_instance}.sh"
+  [[ -f "$instance_file" ]] || die "Instance bulunamadi: ${only_instance}"
+  run_instance_file "$instance_file"
+  exit 0
+fi
+
+[[ -f "$INSTANCES_LIST" ]] || die "instances.list bulunamadi"
+mapfile -t INSTANCE_IDS < "$INSTANCES_LIST"
+[[ ${#INSTANCE_IDS[@]} -gt 0 ]] || die "Aktif instance yok (panel -> Ayarlar -> Instance Ekle)"
+
+for instance_id in "${INSTANCE_IDS[@]}"; do
+  [[ -n "$instance_id" ]] || continue
+  instance_file="${INSTANCES_DIR}/${instance_id}.sh"
+  [[ -f "$instance_file" ]] || die "Instance scripti yok: ${instance_id}"
+  run_instance_file "$instance_file"
+done
+
+exit 0

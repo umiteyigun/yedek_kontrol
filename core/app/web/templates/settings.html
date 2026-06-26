@@ -1,0 +1,1396 @@
+{% extends "base.html" %}
+{% block title %}Ayarlar — Yedek Panel{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/dashboard.css">
+<link rel="stylesheet" href="/static/pages.css">
+{% endblock %}
+{% block body_class %}page-settings{% endblock %}
+{% block content %}
+<div class="dash-canvas">
+  <div class="dash-scene">
+    <div class="dash-ambient dash-ambient-a" aria-hidden="true"></div>
+    <div class="dash-ambient dash-ambient-b" aria-hidden="true"></div>
+
+    <header class="page-hero panel-3d reveal">
+      <div class="page-hero-text">
+        <p class="dash-eyebrow">Coklu Instance Yonetimi</p>
+        <h1>Kurum Ayarlari</h1>
+        <p class="dash-sub">
+          {{ instance_count }} instance · config <strong>v{{ config_version }}</strong> · {{ user }}
+        </p>
+      </div>
+      <div class="page-hero-actions">
+        <form method="post" action="/ayarlar/oracle-discover" class="inline-form">
+          <button type="submit" class="btn-ghost btn-sm">oratab Tara</button>
+        </form>
+        <form method="post" action="/ayarlar/oracle-sync" class="inline-form">
+          <button type="submit" class="btn-ghost btn-sm">Oracle Senkronize</button>
+        </form>
+        <div class="status-pill {% if oracle_probe_ok %}ok{% else %}warn{% endif %}">
+          <span class="pulse"></span>
+          {% if oracle_probe_ok %}TRTEK Oracle OK{% else %}Oracle kontrol{% endif %}
+        </div>
+        <a href="/" class="btn-ghost btn-sm">Duruma Don</a>
+      </div>
+    </header>
+
+    {% if oracle_probe_errors %}
+    <div class="status-banner failed panel-3d reveal reveal-d1">
+      Oracle uyarisi: {{ oracle_probe_errors|join(' · ') }}
+    </div>
+    {% endif %}
+
+    {% if message %}
+    <div class="status-banner running panel-3d reveal reveal-d1">{{ message }}</div>
+    {% endif %}
+    {% if error %}
+    <div class="status-banner failed panel-3d reveal reveal-d1">{{ error }}</div>
+    {% endif %}
+
+    <p class="form-hint reveal reveal-d1">
+      Oracle instance'lar <strong>/etc/oratab</strong> dosyasindan otomatik algilanir.
+      Yeni SID bulununca kurum adi gecici olarak <strong>instance adi (SID)</strong> yazilir;
+      Ayarlar'dan hastane adi ve diger bilgileri sonradan duzenleyebilirsiniz.
+      Oracle yedekleri <strong>/ as sysdba</strong> ile alinir (system sifresi gerekmez).
+      <strong>TRTEK</strong> directory, yedek dizini, Oracle versiyon ve SID alanlari
+      <strong>su - oracle -c</strong> ile sunucudan okunur ve kilitlidir.
+    </p>
+
+    <p class="oracle-info-strip reveal reveal-d1">
+      <span>Oracle {{ settings.oracle_ver }}</span>
+      <span>{{ settings.hostname }}</span>
+      <span>{{ settings.yedek_dir }}/</span>
+      <em>Oracle'dan otomatik · Durum panelinde detay</em>
+    </p>
+
+    {% set tab_param = request.query_params.get('instance', '') %}
+    {% set settings_active_id = tab_param if tab_param else (active_instance_id or (instances[0].id if instances else 'sistem')) %}
+
+    <section class="instance-tabs-section panel-3d reveal reveal-d2">
+      <div class="instance-tabs-head">
+        <span class="instance-tabs-label">Kurumlar</span>
+        <div class="instance-tabs" role="tablist" aria-label="Kurum sekmeleri">
+          {% if instances %}
+          {% for inst in instances %}
+          <button
+            type="button"
+            class="instance-tab{% if inst.id == settings_active_id %} active{% endif %}"
+            role="tab"
+            id="tab-btn-{{ inst.id }}"
+            data-tab="inst-{{ inst.id }}"
+            aria-selected="{% if inst.id == settings_active_id %}true{% else %}false{% endif %}"
+            aria-controls="inst-{{ inst.id }}"
+          >
+            <span class="instance-status-dot {% if inst.enabled %}ok{% else %}off{% endif %}"></span>
+            {{ inst.display_name }}
+            <span>{{ inst.oracle_sid }}</span>
+          </button>
+          {% endfor %}
+          <button type="button" class="instance-tab instance-tab-add" onclick="openAddInstanceModal()" title="Manuel kurum ekle">
+            + Kurum Ekle
+          </button>
+          {% else %}
+          <button type="button" class="instance-tab instance-tab-add" onclick="openAddInstanceModal()" title="Manuel kurum ekle">
+            + Kurum Ekle
+          </button>
+          {% endif %}
+          <button
+            type="button"
+            class="instance-tab instance-tab-system{% if settings_active_id == 'sistem' %} active{% endif %}"
+            role="tab"
+            id="tab-btn-sistem"
+            data-tab="inst-sistem"
+            aria-selected="{% if settings_active_id == 'sistem' %}true{% else %}false{% endif %}"
+            aria-controls="inst-sistem"
+          >
+            Sistem
+            <span>Disk · Bildirim</span>
+          </button>
+        </div>
+      </div>
+
+      {% if instances %}
+      {% for inst in instances %}
+      <div
+        class="instance-tab-panel{% if inst.id == settings_active_id %} active{% endif %}"
+        id="inst-{{ inst.id }}"
+        role="tabpanel"
+        aria-labelledby="tab-btn-{{ inst.id }}"
+      >
+        <form method="post" action="/ayarlar/instance/{{ inst.id }}/kaydet" class="instance-settings-form" id="instance-form-{{ inst.id }}" novalidate>
+          <fieldset class="form-section instance-card-inner">
+            <legend>
+              {{ inst.display_name }}
+              <span class="instance-meta">
+                SID: {{ inst.oracle_sid }} · ID: {{ inst.id }}
+                {% if inst.oracle_probe_ok %}<span class="lock-badge ok">Oracle OK</span>{% elif inst.oracle_probe_ok == false %}<span class="lock-badge warn">Oracle Hata</span>{% endif %}
+              </span>
+            </legend>
+            {% if inst.oracle_probe_error %}
+            <p class="form-hint instance-probe-hint">{{ inst.oracle_probe_error }}</p>
+            {% endif %}
+            <div class="form-grid">
+              <label class="checkbox-row full">
+                <input type="checkbox" name="enabled" value="1" {% if inst.enabled %}checked{% endif %}>
+                Aktif (yedek planina dahil)
+              </label>
+              <label>Gorunen Ad <input type="text" name="label" class="upper-ascii-field" value="{{ inst.label }}" placeholder="ORNEK KURUM" autocapitalize="characters" spellcheck="false"></label>
+              <label>Hastane Adi <input type="text" name="hastane" value="{{ inst.hastane }}" {% if inst.enabled %}required{% endif %}></label>
+              <label>Il <input type="text" name="il" class="upper-ascii-field" value="{{ inst.il }}" placeholder="ANKARA" autocapitalize="characters" spellcheck="false"></label>
+              <label>Kurum Kodu <input type="text" name="kurumkodu" value="{{ inst.kurumkodu }}"></label>
+              <label>Yedek Kodu <input type="text" name="yedek_kodu" value="{{ inst.yedek_kodu }}"></label>
+              <label class="full">GUID Key <input type="text" name="guid_key" value="{{ inst.guid_key }}"></label>
+              <label class="field-locked">
+                Oracle SID
+                <input type="text" value="{{ inst.oracle_sid }}" readonly tabindex="-1">
+              </label>
+              <label class="schema-picker-field full">
+                Schema
+                <div class="schema-field-row">
+                  <input
+                    type="text"
+                    name="schemas"
+                    id="schemas-{{ inst.id }}"
+                    class="schema-input"
+                    value="{{ inst.schemas }}"
+                    readonly
+                    placeholder="Schema secmek icin tiklayin"
+                    data-instance-id="{{ inst.id }}"
+                    data-oracle-sid="{{ inst.oracle_sid }}"
+                    title="Schema listesini acmak icin tiklayin"
+                  >
+                  <button type="button" class="btn-ghost btn-sm schema-pick-btn" data-instance-id="{{ inst.id }}">Sec</button>
+                </div>
+              </label>
+              <p class="form-hint full">Oracle baglantisi: <strong>/ as sysdba</strong> (oracle OS kullanicisi)</p>
+
+              <div class="backup-protect-block full">
+                <p class="form-hint backup-protect-hint">Yedek koruma (kuruma ozel)</p>
+                <label>Koruma Modu
+                  <select name="backup_protect_mode" class="backup-protect-mode" data-instance-id="{{ inst.id }}">
+                    <option value="gzip" {% if (inst.backup_protect_mode or 'gzip') == 'gzip' %}selected{% endif %}>1 — Gzip (klasik, sifresiz)</option>
+                    <option value="oracle" {% if inst.backup_protect_mode == 'oracle' %}selected{% endif %}>2 — Oracle sifreleme + sikistirma (expdp)</option>
+                    <option value="zip" {% if inst.backup_protect_mode == 'zip' %}selected{% endif %}>3 — Zip sifreli arsiv</option>
+                  </select>
+                </label>
+                <label class="backup-protect-pass-field" id="protect-pass-wrap-{{ inst.id }}" {% if inst.backup_protect_mode not in ['oracle','zip'] %}hidden{% endif %}>
+                  Yedek Sifresi
+                  <div class="secret-field-row">
+                    <input
+                      type="password"
+                      name="backup_protect_pass"
+                      id="backup-protect-pass-{{ inst.id }}"
+                      class="secret-input"
+                      placeholder="{% if inst.backup_protect_pass %}Degistirmek icin yeni sifre{% else %}Sifre tanimlayin{% endif %}"
+                      autocomplete="new-password"
+                    >
+                    <button
+                      type="button"
+                      class="btn-ghost btn-sm btn-reveal-secret"
+                      data-target="backup-protect-pass-{{ inst.id }}"
+                      data-secret="{{ inst.backup_protect_pass | e }}"
+                      {% if not inst.backup_protect_pass %}disabled title="Tanimli sifre yok"{% endif %}
+                    >Goster</button>
+                  </div>
+                  <p class="form-hint secret-view-hint">Mevcut: <strong>{{ inst.masked_backup_protect_pass or '—' }}</strong> — geri donus testi icin <em>Goster</em> ile tam sifreyi acin.</p>
+                </label>
+                <p class="form-hint protect-mode-hint" id="protect-hint-{{ inst.id }}">
+                  {% if inst.backup_protect_mode == 'oracle' %}
+                  expdp compression=all + encryption=all, ardindan <strong>gzip</strong>. Dosya: <strong>.dmp.gz</strong> (impdp oncesi gunzip + sifre).
+                  {% elif inst.backup_protect_mode == 'zip' %}
+                  expdp sikistirma + <strong>zip -P</strong> sifreli arsiv. Dosya: <strong>.zip</strong>
+                  {% else %}
+                  Mevcut yontem: expdp + gzip (<strong>.dmp.gz</strong>).
+                  {% endif %}
+                </p>
+                <label class="checkbox-row full">
+                  <input type="checkbox" name="backup_split_enabled" value="1" {% if inst.backup_split_enabled %}checked{% endif %}>
+                  Buyuk yedekleri parcala (split) — FTP'ye parca parca yukle
+                </label>
+                <label>Parca Boyutu (MB)
+                  <input type="number" min="512" max="8192" step="256" name="backup_split_size_mb" value="{{ inst.backup_split_size_mb or 2048 }}">
+                </label>
+              </div>
+
+              <div class="ftp-section-toolbar full">
+                <p class="form-hint ftp-section-hint">Uzak sunucuya yedek yukleme (her kurum ayri FTP hedefi kullanabilir)</p>
+                <button
+                  type="button"
+                  class="btn-ghost btn-sm btn-ftp-browse"
+                  data-instance-id="{{ inst.id }}"
+                  data-instance-name="{{ inst.display_name }}"
+                >FTP Tarayici</button>
+              </div>
+              <label>Uzak FTP IP <input type="text" name="localftpip" value="{{ inst.localftpip }}" placeholder="ornek: 10.0.0.50" {% if inst.enabled %}required{% endif %}></label>
+              <label>Uzak FTP Kullanici <input type="text" name="localftpuser" value="{{ inst.localftpuser }}" {% if inst.enabled %}required{% endif %}></label>
+              <label>Uzak FTP Sifre <input type="password" name="localftppass" placeholder="Mevcut: {{ inst.masked_ftp_pass }}" {% if inst.enabled and not inst.masked_ftp_pass %}required{% endif %}></label>
+              <label class="full">Uzak FTP Dizin <input type="text" name="localftpdir" value="{{ inst.localftpdir or '/' }}" placeholder="/yedek"></label>
+              <p class="form-hint full">Sunucudaki hedef klasor. Varsayilan <strong>/</strong> (kok dizin).</p>
+              <label>Saklama (gun) <input type="number" min="1" max="365" name="retention_days" value="{{ inst.retention_days if inst.retention_days > 0 else 2 }}" {% if inst.enabled %}required{% endif %}></label>
+            </div>
+            <div class="form-actions instance-form-actions">
+              <button type="submit" class="btn-glow btn-sm">Bu Kurumu Kaydet</button>
+              {% if instance_count > 1 %}
+              <button type="submit" formaction="/ayarlar/instance/{{ inst.id }}/sil" formmethod="post" class="btn-danger btn-sm" onclick="return confirm('{{ inst.display_name }} instance silinsin mi?');">Instance Sil</button>
+              {% endif %}
+            </div>
+          </fieldset>
+        </form>
+
+        <div class="schedule-instance-block schedule-in-tab">
+            <div class="schedule-instance-head">
+              <div>
+                <h3>Zamanlama</h3>
+                <p class="schedule-instance-meta">SID {{ inst.oracle_sid }} · Europe/Istanbul</p>
+              </div>
+              <button
+                type="button"
+                class="btn-glow btn-sm btn-schedule-add"
+                data-instance-id="{{ inst.id }}"
+                data-instance-name="{{ inst.display_name }}"
+              >Zamanlama Ekle</button>
+            </div>
+            <p class="form-hint schedule-tab-hint">
+              Disk dolu veya tahmini alan yetmezse zamanlanmis yedek baslatilmaz.
+            </p>
+
+            {% if inst.schedules %}
+            <div class="schedule-table-wrap">
+              <table class="schedule-table">
+                <thead>
+                  <tr>
+                    <th>Durum</th>
+                    <th>Tip</th>
+                    <th>Plan</th>
+                    <th>Etiket</th>
+                    <th>Islem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for rule in inst.schedules %}
+                  <tr>
+                    <td>
+                      {% if rule.enabled %}
+                      <span class="lock-badge ok">Aktif</span>
+                      {% else %}
+                      <span class="lock-badge warn">Pasif</span>
+                      {% endif %}
+                    </td>
+                    <td>{{ rule.backup_type_label }}</td>
+                    <td><code>{{ rule.summary }}</code></td>
+                    <td>{{ rule.label or '—' }}</td>
+                    <td class="schedule-actions">
+                      <button
+                        type="button"
+                        class="btn-ghost btn-sm btn-schedule-edit"
+                        data-instance-id="{{ inst.id }}"
+                        data-instance-name="{{ inst.display_name }}"
+                        data-rule-id="{{ rule.id }}"
+                        data-backup-type="{{ rule.backup_type }}"
+                        data-time="{{ rule.time }}"
+                        data-day="{{ rule.day_of_week if rule.day_of_week is not none else '' }}"
+                        data-enabled="{{ '1' if rule.enabled else '0' }}"
+                        data-label="{{ rule.label }}"
+                      >Duzenle</button>
+                      <form
+                        method="post"
+                        action="/ayarlar/instance/{{ inst.id }}/zamanlama/{{ rule.id }}/sil"
+                        class="inline-form"
+                        onsubmit="return confirm('Bu zamanlama silinsin mi?');"
+                      >
+                        <button type="submit" class="btn-danger btn-sm">Sil</button>
+                      </form>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% else %}
+            <p class="schedule-empty">Bu kurum icin henuz zamanlama yok.</p>
+            {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div class="instance-empty-bar">
+        <p class="form-hint">Henuz kurum tanimli degil. <strong>oratab Tara</strong> ile otomatik ekleyin veya manuel kurum ekleyin.</p>
+      </div>
+      {% endif %}
+
+      <div
+        class="instance-tab-panel{% if settings_active_id == 'sistem' %} active{% endif %}"
+        id="inst-sistem"
+        role="tabpanel"
+        aria-labelledby="tab-btn-sistem"
+      >
+        <form method="post" action="/ayarlar/genel/kaydet" class="global-settings-form" novalidate>
+          <fieldset class="form-section panel-3d settings-section-bottom">
+            <legend>Log Temizligi</legend>
+            <p class="form-hint section-hint">
+              <code>panel-backup-*.log</code> dosyalari her yedek calistirmasinin panel sarici kaydidir
+              (expdp ciktisi kopyasi, ~8 KB). <strong>Saklama (gun)</strong> ile yedek dosyalari,
+              <strong>Panel log saklama</strong> ile bu kayitlar temizlenir (her gece 03:00).
+            </p>
+            <div class="form-grid">
+              <label>Panel log saklama (gun)
+                <input type="number" min="1" max="90" name="panel_log_retention_days" value="{{ settings.panel_log_retention_days or 2 }}">
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="form-section panel-3d settings-section-bottom">
+            <legend>Disk Guvenligi</legend>
+            <p class="form-hint section-hint">Zamanlanmis ve manuel yedekler disk doluysa baslatilmaz.</p>
+            <div class="form-grid">
+              <label>Disk Doluluk Limiti (%) <input type="number" min="80" max="99" name="backup_disk_max_pct" value="{{ settings.backup_disk_max_pct }}"></label>
+              <label>Min Bos Alan (GB) <input type="number" min="0.5" step="0.5" name="backup_disk_min_free_gb" value="{{ settings.backup_disk_min_free_gb }}"></label>
+              <label>Guvenlik Payi (GB) <input type="number" min="0" step="0.5" name="backup_disk_reserve_gb" value="{{ settings.backup_disk_reserve_gb }}"></label>
+              <label>Yedek Tahmin Marji (%) <input type="number" min="0" max="200" name="backup_size_margin_pct" value="{{ settings.backup_size_margin_pct }}"></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="form-section panel-3d settings-section-bottom">
+            <legend>Merkezi Bildirim</legend>
+            <p class="form-hint section-hint">
+              Yedek bitince panel bu adrese iletir:
+              <strong>GuidKey, YedekKodu, Tarih, DisIp, DiskAlani1-3, YedekBoyutu, Ftp, Mail</strong>
+            </p>
+            <div class="form-grid">
+              <label class="full">Merkezi API URL <input type="url" name="remote_api_url" value="{{ settings.remote_api_url }}" placeholder="http://kurumsalapi.trtekyazilim.com/api/YedekYonetimi/YedekBildirimi"></label>
+              <label class="checkbox-row full">
+                <input type="checkbox" name="mail_notify" value="1" {% if settings.mail_notify %}checked{% endif %}>
+                Merkeze Mail=1 ile bildir
+              </label>
+            </div>
+          </fieldset>
+
+          <div class="form-actions instance-form-actions">
+            <button type="submit" class="btn-glow btn-sm">Sistem Ayarlarini Kaydet</button>
+            <a href="/" class="btn-ghost btn-sm">Iptal</a>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    {% if not instances %}
+    <div class="instance-empty-bar panel-3d reveal reveal-d2">
+      <button type="button" class="btn-glow btn-sm" onclick="openAddInstanceModal()">+ Kurum Ekle</button>
+    </div>
+    {% endif %}
+
+    <dialog id="ftp-browser-modal" class="schedule-modal ftp-browser-modal">
+      <div class="schedule-modal-form ftp-browser-body">
+        <div class="schedule-modal-head">
+          <h3 id="ftp-browser-title">FTP Tarayici</h3>
+          <button type="button" class="btn-ghost btn-sm" onclick="closeFtpBrowserModal()">Kapat</button>
+        </div>
+        <p class="form-hint ftp-browser-meta" id="ftp-browser-meta"></p>
+        <div class="ftp-browser-toolbar">
+          <button type="button" class="btn-ghost btn-sm" id="ftp-browser-up">Ust Dizin</button>
+          <button type="button" class="btn-ghost btn-sm" id="ftp-browser-refresh">Yenile</button>
+          <button type="button" class="btn-danger btn-sm" id="ftp-browser-delete">Sil</button>
+          <button type="button" class="btn-ghost btn-sm ftp-delete-only" id="ftp-browser-cancel-delete" hidden>Iptal</button>
+          <button type="button" class="btn-danger btn-sm ftp-delete-only" id="ftp-browser-confirm-delete" hidden>Secilenleri Sil</button>
+        </div>
+        <nav class="ftp-breadcrumb" id="ftp-breadcrumb" aria-label="FTP dizin yolu"></nav>
+        <div class="ftp-browser-status" id="ftp-browser-status">Hazir</div>
+        <div class="ftp-browser-list-wrap">
+          <table class="ftp-browser-table">
+            <thead>
+              <tr id="ftp-browser-head-row">
+                <th class="ftp-col-select" hidden>Sec</th>
+                <th>Ad</th>
+                <th>Tarih</th>
+                <th>Boyut</th>
+              </tr>
+            </thead>
+            <tbody id="ftp-browser-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="schema-picker-modal" class="schedule-modal schema-picker-modal">
+      <div class="schedule-modal-form schema-picker-body">
+        <div class="schedule-modal-head">
+          <h3 id="schema-picker-title">Schema Secimi</h3>
+          <button type="button" class="btn-ghost btn-sm" onclick="closeSchemaPickerModal()">Kapat</button>
+        </div>
+        <p class="form-hint schema-picker-meta" id="schema-picker-meta"></p>
+        <div class="schema-picker-toolbar">
+          <button type="button" class="btn-ghost btn-sm" id="schema-picker-refresh">Yenile</button>
+          <button type="button" class="btn-ghost btn-sm" id="schema-picker-select-all">Tumunu Sec</button>
+          <button type="button" class="btn-ghost btn-sm" id="schema-picker-clear">Temizle</button>
+          <input type="search" id="schema-picker-filter" class="schema-picker-filter" placeholder="Ara..." autocomplete="off">
+        </div>
+        <div class="schema-picker-status" id="schema-picker-status">Hazir</div>
+        <div class="schema-picker-list-wrap" id="schema-picker-list-wrap">
+          <div class="schema-picker-list" id="schema-picker-list"></div>
+        </div>
+        <div class="schema-picker-preview">
+          <span class="schema-picker-preview-label">Secilen:</span>
+          <code id="schema-picker-preview" class="schema-picker-preview-value"></code>
+        </div>
+        <div class="form-actions schema-picker-actions">
+          <button type="button" class="btn-glow btn-sm" id="schema-picker-apply">Uygula</button>
+          <button type="button" class="btn-ghost btn-sm" onclick="closeSchemaPickerModal()">Iptal</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="schedule-modal" class="schedule-modal panel-3d">
+      <form method="post" id="schedule-form" class="schedule-modal-form">
+        <div class="schedule-modal-head">
+          <h3 id="schedule-modal-title">Zamanlama Ekle</h3>
+          <button type="button" class="btn-ghost btn-sm" onclick="closeScheduleModal()">Kapat</button>
+        </div>
+        <input type="hidden" name="rule_id" id="schedule-rule-id" value="">
+        <div class="form-grid">
+          <label class="full">
+            Yedek Tipi
+            <select name="backup_type" id="schedule-backup-type" required onchange="toggleWeeklyDay()">
+              <option value="GUNLUK">Gunluk (schema)</option>
+              <option value="HAFTALIK">Haftalik (full)</option>
+            </select>
+          </label>
+          <label>
+            Saat
+            <input type="time" name="time" id="schedule-time" value="02:00" required>
+          </label>
+          <label id="schedule-day-wrap">
+            Haftanin Gunu
+            <select name="day_of_week" id="schedule-day">
+              {% for day in weekday_labels %}
+              <option value="{{ loop.index0 }}">{{ day }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="full">
+            Etiket (opsiyonel)
+            <input type="text" name="label" id="schedule-label" placeholder="Ornek: Gece yedegi">
+          </label>
+          <label class="checkbox-row full">
+            <input type="checkbox" name="enabled" id="schedule-enabled" value="1" checked>
+            Aktif
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-glow btn-sm" id="schedule-submit-btn">Kaydet</button>
+          <button type="button" class="btn-ghost btn-sm" onclick="closeScheduleModal()">Iptal</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="add-instance-modal" class="schedule-modal panel-3d">
+      <form method="post" action="/ayarlar/instance/ekle" class="schedule-modal-form" id="add-instance-form">
+        <div class="schedule-modal-head">
+          <h3>Manuel Kurum Ekle</h3>
+          <button type="button" class="btn-ghost btn-sm" onclick="closeAddInstanceModal()">Kapat</button>
+        </div>
+        <p class="form-hint modal-intro-hint">
+          Cogu durumda <strong>oratab Tara</strong> yeterlidir. Elle eklerken Oracle SYSDBA ile dogrulanir.
+        </p>
+        <div class="form-grid">
+          <label>Instance ID (opsiyonel) <input type="text" name="new_id" placeholder="karedent"></label>
+          <label>Oracle SID <input type="text" name="new_oracle_sid" placeholder="orcl" required></label>
+          <label>Hastane Adi <input type="text" name="new_hastane" placeholder="KAREDENT" required></label>
+          <label>Il <input type="text" name="new_il" class="upper-ascii-field" placeholder="ANKARA" autocapitalize="characters" spellcheck="false"></label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-glow btn-sm">Ekle ve Oracle Dogrula</button>
+          <button type="button" class="btn-ghost btn-sm" onclick="closeAddInstanceModal()">Iptal</button>
+        </div>
+      </form>
+    </dialog>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+  const tabs = document.querySelectorAll('.instance-tab');
+  const panels = document.querySelectorAll('.instance-tab-panel');
+
+  function activateInstanceTab(tabId, updateUrl) {
+    tabs.forEach(function (tab) {
+      const active = tab.dataset.tab === tabId;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    panels.forEach(function (panel) {
+      panel.classList.toggle('active', panel.id === tabId);
+    });
+    if (updateUrl && tabId && tabId.startsWith('inst-')) {
+      const instanceId = tabId.slice(5);
+      const url = new URL(window.location.href);
+      url.searchParams.set('instance', instanceId);
+      history.replaceState(null, '', url.toString());
+    }
+  }
+
+  tabs.forEach(function (tab) {
+    if (tab.classList.contains('instance-tab-add')) {
+      return;
+    }
+    tab.addEventListener('click', function () {
+      activateInstanceTab(tab.dataset.tab, true);
+    });
+  });
+
+  const modal = document.getElementById('schedule-modal');
+  const form = document.getElementById('schedule-form');
+  const title = document.getElementById('schedule-modal-title');
+  const submitBtn = document.getElementById('schedule-submit-btn');
+  const backupType = document.getElementById('schedule-backup-type');
+  const dayWrap = document.getElementById('schedule-day-wrap');
+  const daySelect = document.getElementById('schedule-day');
+  const timeInput = document.getElementById('schedule-time');
+  const labelInput = document.getElementById('schedule-label');
+  const enabledInput = document.getElementById('schedule-enabled');
+  const ruleIdInput = document.getElementById('schedule-rule-id');
+
+  function toggleWeeklyDay() {
+    const weekly = backupType.value === 'HAFTALIK';
+    dayWrap.style.display = weekly ? '' : 'none';
+    daySelect.disabled = !weekly;
+    if (!weekly) {
+      daySelect.value = '';
+    } else if (daySelect.value === '') {
+      daySelect.value = '6';
+    }
+  }
+
+  window.toggleWeeklyDay = toggleWeeklyDay;
+
+  window.openScheduleModal = function (mode, instanceId, instanceName, rule) {
+    const isEdit = mode === 'edit';
+    title.textContent = (isEdit ? 'Zamanlama Duzenle — ' : 'Zamanlama Ekle — ') + instanceName;
+    submitBtn.textContent = isEdit ? 'Guncelle' : 'Ekle';
+    form.action = isEdit
+      ? `/ayarlar/instance/${instanceId}/zamanlama/${rule.id}/duzenle`
+      : `/ayarlar/instance/${instanceId}/zamanlama/ekle`;
+
+    ruleIdInput.value = isEdit ? rule.id : '';
+    backupType.value = isEdit ? rule.backup_type : 'GUNLUK';
+    timeInput.value = isEdit ? rule.time : '02:00';
+    labelInput.value = isEdit ? (rule.label || '') : '';
+    enabledInput.checked = isEdit ? rule.enabled : true;
+
+    if (isEdit && rule.day_of_week !== null && rule.day_of_week !== '') {
+      daySelect.value = String(rule.day_of_week);
+    } else {
+      daySelect.value = '6';
+    }
+    toggleWeeklyDay();
+    modal.showModal();
+  };
+
+  window.closeScheduleModal = function () {
+    modal.close();
+  };
+
+  document.querySelectorAll('.btn-schedule-add').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      openScheduleModal('add', btn.dataset.instanceId, btn.dataset.instanceName);
+    });
+  });
+
+  document.querySelectorAll('.btn-schedule-edit').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      openScheduleModal('edit', btn.dataset.instanceId, btn.dataset.instanceName, {
+        id: btn.dataset.ruleId,
+        backup_type: btn.dataset.backupType,
+        time: btn.dataset.time,
+        day_of_week: btn.dataset.day === '' ? null : Number(btn.dataset.day),
+        enabled: btn.dataset.enabled === '1',
+        label: btn.dataset.label || '',
+      });
+    });
+  });
+
+  modal.addEventListener('click', function (event) {
+    if (event.target === modal) {
+      closeScheduleModal();
+    }
+  });
+
+  const addInstanceModal = document.getElementById('add-instance-modal');
+  const addInstanceForm = document.getElementById('add-instance-form');
+
+  window.openAddInstanceModal = function () {
+    if (addInstanceForm) {
+      addInstanceForm.reset();
+    }
+    addInstanceModal.showModal();
+  };
+
+  window.closeAddInstanceModal = function () {
+    addInstanceModal.close();
+  };
+
+  addInstanceModal.addEventListener('click', function (event) {
+    if (event.target === addInstanceModal) {
+      closeAddInstanceModal();
+    }
+  });
+
+  const schemaModal = document.getElementById('schema-picker-modal');
+  const schemaTitle = document.getElementById('schema-picker-title');
+  const schemaMeta = document.getElementById('schema-picker-meta');
+  const schemaStatus = document.getElementById('schema-picker-status');
+  const schemaList = document.getElementById('schema-picker-list');
+  const schemaPreview = document.getElementById('schema-picker-preview');
+  const schemaFilter = document.getElementById('schema-picker-filter');
+  const schemaRefreshBtn = document.getElementById('schema-picker-refresh');
+  const schemaSelectAllBtn = document.getElementById('schema-picker-select-all');
+  const schemaClearBtn = document.getElementById('schema-picker-clear');
+  const schemaApplyBtn = document.getElementById('schema-picker-apply');
+
+  const schemaState = {
+    instanceId: '',
+    instanceName: '',
+    oracleSid: '',
+    schemas: [],
+    selected: new Set(),
+    loading: false,
+    filter: '',
+  };
+
+  function parseSchemaValue(value) {
+    return String(value || '')
+      .split(',')
+      .map(function (part) { return part.trim().toUpperCase(); })
+      .filter(Boolean);
+  }
+
+  function formatSchemaValue(names) {
+    return names
+      .map(function (name) { return String(name).trim().toUpperCase(); })
+      .filter(Boolean)
+      .join(',');
+  }
+
+  function updateSchemaPreview() {
+    if (!schemaPreview) {
+      return;
+    }
+    const ordered = schemaState.schemas.filter(function (name) {
+      return schemaState.selected.has(name);
+    });
+    const extras = Array.from(schemaState.selected).filter(function (name) {
+      return schemaState.schemas.indexOf(name) === -1;
+    });
+    const all = ordered.concat(extras.sort());
+    schemaPreview.textContent = formatSchemaValue(all) || '(bos)';
+  }
+
+  function setSchemaStatus(text, kind) {
+    if (!schemaStatus) {
+      return;
+    }
+    schemaStatus.textContent = text;
+    schemaStatus.className = 'schema-picker-status' + (kind ? ' ' + kind : '');
+  }
+
+  function renderSchemaPickerList() {
+    if (!schemaList) {
+      return;
+    }
+    const filter = (schemaState.filter || '').trim().toUpperCase();
+    const visible = schemaState.schemas.filter(function (name) {
+      return !filter || name.toUpperCase().indexOf(filter) !== -1;
+    });
+    if (!visible.length) {
+      schemaList.innerHTML = '<p class="schema-picker-empty">Gosterilecek schema yok.</p>';
+      return;
+    }
+    schemaList.innerHTML = visible.map(function (name) {
+      const checked = schemaState.selected.has(name) ? ' checked' : '';
+      const safe = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+      return (
+        '<label class="schema-picker-item">' +
+        '<input type="checkbox" class="schema-picker-check" value="' + safe + '"' + checked + '>' +
+        '<span>' + safe + '</span>' +
+        '</label>'
+      );
+    }).join('');
+    schemaList.querySelectorAll('.schema-picker-check').forEach(function (input) {
+      input.addEventListener('change', function () {
+        const value = String(input.value || '').toUpperCase();
+        if (input.checked) {
+          schemaState.selected.add(value);
+        } else {
+          schemaState.selected.delete(value);
+        }
+        updateSchemaPreview();
+      });
+    });
+  }
+
+  async function loadSchemaPickerList() {
+    if (!schemaState.instanceId || schemaState.loading) {
+      return;
+    }
+    schemaState.loading = true;
+    setSchemaStatus('Oracle schema listesi yukleniyor...', 'loading');
+    try {
+      const response = await fetch('/ayarlar/instance/' + encodeURIComponent(schemaState.instanceId) + '/schemas/list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error((data && data.error) || 'Schema listesi alinamadi');
+      }
+      schemaState.schemas = (data.schemas || []).map(function (name) {
+        return String(name).trim().toUpperCase();
+      });
+      const known = new Set(schemaState.schemas);
+      Array.from(schemaState.selected).forEach(function (name) {
+        if (!known.has(name)) {
+          schemaState.schemas.push(name);
+        }
+      });
+      schemaState.schemas.sort();
+      renderSchemaPickerList();
+      setSchemaStatus(schemaState.schemas.length + ' schema listelendi (SID: ' + (data.oracle_sid || schemaState.oracleSid) + ')', 'ok');
+    } catch (err) {
+      setSchemaStatus(err.message || 'Schema listesi alinamadi', 'failed');
+      if (schemaList) {
+        schemaList.innerHTML = '<p class="schema-picker-empty">' + (err.message || 'Hata') + '</p>';
+      }
+    } finally {
+      schemaState.loading = false;
+    }
+  }
+
+  function openSchemaPicker(instanceId, instanceName) {
+    const input = document.getElementById('schemas-' + instanceId);
+    if (!input) {
+      return;
+    }
+    schemaState.instanceId = instanceId;
+    schemaState.instanceName = instanceName || instanceId;
+    schemaState.oracleSid = input.dataset.oracleSid || '';
+    schemaState.filter = '';
+    schemaState.selected = new Set(parseSchemaValue(input.value));
+    if (schemaFilter) {
+      schemaFilter.value = '';
+    }
+    if (schemaTitle) {
+      schemaTitle.textContent = 'Schema Secimi — ' + schemaState.instanceName;
+    }
+    if (schemaMeta) {
+      schemaMeta.textContent = 'SID: ' + (schemaState.oracleSid || '-') + ' · Secilenler virgul ile kaydedilir (expdp formati).';
+    }
+    updateSchemaPreview();
+    schemaModal.showModal();
+    loadSchemaPickerList();
+  }
+
+  window.closeSchemaPickerModal = function () {
+    schemaModal.close();
+  };
+
+  function applySchemaPickerSelection() {
+    const input = document.getElementById('schemas-' + schemaState.instanceId);
+    if (!input) {
+      closeSchemaPickerModal();
+      return;
+    }
+    const ordered = schemaState.schemas.filter(function (name) {
+      return schemaState.selected.has(name);
+    });
+    const extras = Array.from(schemaState.selected).filter(function (name) {
+      return schemaState.schemas.indexOf(name) === -1;
+    });
+    input.value = formatSchemaValue(ordered.concat(extras.sort()));
+    closeSchemaPickerModal();
+  }
+
+  document.querySelectorAll('.schema-input, .schema-pick-btn').forEach(function (el) {
+    el.addEventListener('click', function (event) {
+      event.preventDefault();
+      const instanceId = el.dataset.instanceId;
+      const form = document.getElementById('instance-form-' + instanceId);
+      const labelInput = form ? form.querySelector('[name="label"]') : null;
+      const instanceName = labelInput ? labelInput.value : instanceId;
+      openSchemaPicker(instanceId, instanceName);
+    });
+  });
+
+  if (schemaRefreshBtn) {
+    schemaRefreshBtn.addEventListener('click', function () {
+      loadSchemaPickerList();
+    });
+  }
+  if (schemaSelectAllBtn) {
+    schemaSelectAllBtn.addEventListener('click', function () {
+      const filter = (schemaState.filter || '').trim().toUpperCase();
+      schemaState.schemas.forEach(function (name) {
+        if (!filter || name.toUpperCase().indexOf(filter) !== -1) {
+          schemaState.selected.add(name);
+        }
+      });
+      renderSchemaPickerList();
+      updateSchemaPreview();
+    });
+  }
+  if (schemaClearBtn) {
+    schemaClearBtn.addEventListener('click', function () {
+      schemaState.selected = new Set();
+      renderSchemaPickerList();
+      updateSchemaPreview();
+    });
+  }
+  if (schemaFilter) {
+    schemaFilter.addEventListener('input', function () {
+      schemaState.filter = schemaFilter.value || '';
+      renderSchemaPickerList();
+    });
+  }
+  if (schemaApplyBtn) {
+    schemaApplyBtn.addEventListener('click', applySchemaPickerSelection);
+  }
+  if (schemaModal) {
+    schemaModal.addEventListener('click', function (event) {
+      if (event.target === schemaModal) {
+        closeSchemaPickerModal();
+      }
+    });
+  }
+
+  const ftpModal = document.getElementById('ftp-browser-modal');
+  const ftpTitle = document.getElementById('ftp-browser-title');
+  const ftpMeta = document.getElementById('ftp-browser-meta');
+  const ftpStatus = document.getElementById('ftp-browser-status');
+  const ftpTbody = document.getElementById('ftp-browser-tbody');
+  const ftpHeadRow = document.getElementById('ftp-browser-head-row');
+  const ftpBreadcrumb = document.getElementById('ftp-breadcrumb');
+  const ftpUpBtn = document.getElementById('ftp-browser-up');
+  const ftpRefreshBtn = document.getElementById('ftp-browser-refresh');
+  const ftpDeleteBtn = document.getElementById('ftp-browser-delete');
+  const ftpCancelDeleteBtn = document.getElementById('ftp-browser-cancel-delete');
+  const ftpConfirmDeleteBtn = document.getElementById('ftp-browser-confirm-delete');
+
+  const ftpState = {
+    instanceId: '',
+    instanceName: '',
+    path: '/',
+    loading: false,
+    deleteMode: false,
+    entries: [],
+    analysis: {},
+    selected: new Set(),
+  };
+
+  function formatFtpSize(bytes) {
+    const value = Number(bytes) || 0;
+    if (value < 1024) {
+      return value + ' B';
+    }
+    if (value < 1024 * 1024) {
+      return (value / 1024).toFixed(1) + ' KB';
+    }
+    if (value < 1024 * 1024 * 1024) {
+      return (value / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+    return (value / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+  }
+
+  function joinFtpPath(base, name) {
+    const root = (base || '/').replace(/\/+$/, '') || '';
+    if (!name) {
+      return '/';
+    }
+    if (name.startsWith('/')) {
+      return name;
+    }
+    return (root + '/' + name).replace(/\/+/g, '/');
+  }
+
+  function parentFtpPath(path) {
+    const cleaned = (path || '/').replace(/\/+$/, '') || '/';
+    if (cleaned === '' || cleaned === '/') {
+      return '/';
+    }
+    const parts = cleaned.split('/').filter(Boolean);
+    parts.pop();
+    return parts.length ? '/' + parts.join('/') : '/';
+  }
+
+  function readInstanceFtpCredentials(instanceId) {
+    const form = document.getElementById('instance-form-' + instanceId);
+    if (!form) {
+      return null;
+    }
+    return {
+      host: (form.querySelector('[name="localftpip"]') || {}).value || '',
+      user: (form.querySelector('[name="localftpuser"]') || {}).value || '',
+      password: (form.querySelector('[name="localftppass"]') || {}).value || '',
+      baseDir: (form.querySelector('[name="localftpdir"]') || {}).value || '/',
+    };
+  }
+
+  function setFtpDeleteMode(enabled) {
+    ftpState.deleteMode = enabled;
+    if (!enabled) {
+      ftpState.selected = new Set();
+    }
+    document.querySelectorAll('.ftp-delete-only').forEach(function (el) {
+      el.hidden = !enabled;
+    });
+    if (ftpDeleteBtn) {
+      ftpDeleteBtn.hidden = enabled;
+    }
+    if (ftpHeadRow) {
+      const selectCol = ftpHeadRow.querySelector('.ftp-col-select');
+      if (selectCol) {
+        selectCol.hidden = !enabled;
+      }
+    }
+    if (ftpModal) {
+      ftpModal.classList.toggle('ftp-delete-mode', enabled);
+    }
+    renderFtpEntries(ftpState.entries, ftpState.analysis);
+  }
+
+  function renderFtpBreadcrumb(path) {
+    ftpBreadcrumb.innerHTML = '';
+    const parts = (path || '/').split('/').filter(Boolean);
+    const rootBtn = document.createElement('button');
+    rootBtn.type = 'button';
+    rootBtn.className = 'ftp-crumb';
+    rootBtn.textContent = '/';
+    rootBtn.addEventListener('click', function () {
+      if (ftpState.deleteMode) {
+        return;
+      }
+      loadFtpDirectory('/');
+    });
+    ftpBreadcrumb.appendChild(rootBtn);
+
+    let built = '';
+    parts.forEach(function (part) {
+      built += '/' + part;
+      const sep = document.createElement('span');
+      sep.className = 'ftp-crumb-sep';
+      sep.textContent = '/';
+      ftpBreadcrumb.appendChild(sep);
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ftp-crumb';
+      btn.textContent = part;
+      const target = built;
+      btn.addEventListener('click', function () {
+        if (ftpState.deleteMode) {
+          return;
+        }
+        loadFtpDirectory(target);
+      });
+      ftpBreadcrumb.appendChild(btn);
+    });
+  }
+
+  function entryNameClass(entry) {
+    if (entry.zero_size || entry.suspicious) {
+      return 'ftp-name-bad';
+    }
+    return '';
+  }
+
+  function renderFtpEntries(entries, analysis) {
+    ftpTbody.innerHTML = '';
+    const colCount = ftpState.deleteMode ? 4 : 3;
+    if (!entries.length) {
+      const row = document.createElement('tr');
+      row.innerHTML = '<td colspan="' + colCount + '" class="ftp-empty">Dizin bos</td>';
+      ftpTbody.appendChild(row);
+      return;
+    }
+
+    entries.forEach(function (entry) {
+      const row = document.createElement('tr');
+      row.className = entry.type === 'dir' ? 'ftp-row-dir' : 'ftp-row-file';
+      if (entry.protected) {
+        row.classList.add('ftp-row-protected');
+      }
+      if (entry.zero_size) {
+        row.classList.add('ftp-row-zero');
+      }
+      if (entry.suspicious) {
+        row.classList.add('ftp-row-suspicious');
+      }
+
+      if (ftpState.deleteMode) {
+        const selectCell = document.createElement('td');
+        selectCell.className = 'ftp-col-select';
+        if (entry.type === 'file') {
+          if (entry.zero_size) {
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.checked = true;
+            box.disabled = true;
+            box.title = 'Boyutu 0 — otomatik silinecek';
+            selectCell.appendChild(box);
+          } else if (entry.protected) {
+            const badge = document.createElement('span');
+            badge.className = 'ftp-protected-badge';
+            badge.title = 'Dosya tarihine gore son ' + ((analysis && analysis.protected_count) || 5) + ' yedek korunuyor';
+            badge.textContent = 'Korunuyor';
+            selectCell.appendChild(badge);
+          } else if (entry.deletable) {
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.checked = ftpState.selected.has(entry.name);
+            box.addEventListener('change', function () {
+              if (box.checked) {
+                ftpState.selected.add(entry.name);
+              } else {
+                ftpState.selected.delete(entry.name);
+              }
+            });
+            selectCell.appendChild(box);
+          }
+        }
+        row.appendChild(selectCell);
+      }
+
+      const nameCell = document.createElement('td');
+      nameCell.className = 'ftp-name-cell';
+      if (entry.type === 'dir') {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ftp-dir-link';
+        btn.textContent = entry.name;
+        btn.disabled = ftpState.deleteMode;
+        if (!ftpState.deleteMode) {
+          btn.addEventListener('click', function () {
+            loadFtpDirectory(joinFtpPath(ftpState.path, entry.name));
+          });
+        }
+        nameCell.appendChild(btn);
+      } else {
+        const label = document.createElement('span');
+        label.className = entryNameClass(entry);
+        label.textContent = entry.name;
+        nameCell.appendChild(label);
+        if (entry.suspicious) {
+          const hint = document.createElement('span');
+          hint.className = 'ftp-bad-hint';
+          hint.textContent = ' sorunlu yedek';
+          nameCell.appendChild(hint);
+        }
+      }
+
+      const dateCell = document.createElement('td');
+      dateCell.className = 'ftp-date-cell';
+      dateCell.textContent = entry.type === 'dir' ? '—' : (entry.modified_display || '—');
+
+      const sizeCell = document.createElement('td');
+      sizeCell.textContent = entry.type === 'dir' ? '—' : formatFtpSize(entry.size);
+
+      row.appendChild(nameCell);
+      row.appendChild(dateCell);
+      row.appendChild(sizeCell);
+      ftpTbody.appendChild(row);
+    });
+  }
+
+  function collectDeleteTargets() {
+    const forced = ftpState.entries
+      .filter(function (entry) {
+        return entry.type === 'file' && entry.zero_size;
+      })
+      .map(function (entry) {
+        return entry.name;
+      });
+    const manual = Array.from(ftpState.selected);
+    const merged = Array.from(new Set(forced.concat(manual)));
+    return merged;
+  }
+
+  async function loadFtpDirectory(path) {
+    if (!ftpState.instanceId || ftpState.loading) {
+      return;
+    }
+    const creds = readInstanceFtpCredentials(ftpState.instanceId);
+    if (!creds) {
+      ftpStatus.textContent = 'Form bulunamadi';
+      ftpStatus.className = 'ftp-browser-status failed';
+      return;
+    }
+    if (!creds.host || !creds.user) {
+      ftpStatus.textContent = 'FTP IP ve kullanici adini doldurun';
+      ftpStatus.className = 'ftp-browser-status failed';
+      return;
+    }
+
+    const targetPath = path || creds.baseDir || '/';
+    ftpState.loading = true;
+    ftpState.path = targetPath;
+    ftpStatus.textContent = 'Baglaniliyor...';
+    ftpStatus.className = 'ftp-browser-status loading';
+    ftpTbody.innerHTML = '';
+    renderFtpBreadcrumb(targetPath);
+
+    try {
+      const response = await fetch('/ayarlar/instance/' + encodeURIComponent(ftpState.instanceId) + '/ftp/browse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          host: creds.host,
+          user: creds.user,
+          password: creds.password,
+          path: targetPath,
+        }),
+      });
+      const data = await response.json();
+      if (!data.ok) {
+        throw new Error(data.error || 'FTP listeleme basarisiz');
+      }
+      ftpState.path = data.path || targetPath;
+      ftpState.entries = data.entries || [];
+      ftpState.analysis = data.analysis || {};
+      ftpMeta.textContent = data.host + ':' + data.port + ' · ' + ftpState.path;
+      renderFtpBreadcrumb(ftpState.path);
+      renderFtpEntries(ftpState.entries, ftpState.analysis);
+
+      const backupCount = ftpState.entries.filter(function (e) {
+        return e.is_backup;
+      }).length;
+      let statusText = ftpState.entries.length + ' oge · dosya tarihine gore (eski ustte)';
+      if (backupCount) {
+        statusText += ' · tarihe gore son ' + ((data.analysis && data.analysis.protected_count) || 5) + ' yedek korunuyor';
+      }
+      if (ftpState.deleteMode) {
+        statusText += ' · silme modu aktif';
+      }
+      ftpStatus.textContent = statusText;
+      ftpStatus.className = 'ftp-browser-status ok';
+    } catch (err) {
+      ftpStatus.textContent = err.message || String(err);
+      ftpStatus.className = 'ftp-browser-status failed';
+      ftpState.entries = [];
+      renderFtpEntries([], {});
+    } finally {
+      ftpState.loading = false;
+    }
+  }
+
+  async function deleteSelectedFtpFiles() {
+    const files = collectDeleteTargets();
+    if (!files.length) {
+      ftpStatus.textContent = 'Silinecek dosya secilmedi';
+      ftpStatus.className = 'ftp-browser-status failed';
+      return;
+    }
+    const preview = files.slice(0, 5).join(', ');
+    const suffix = files.length > 5 ? ' ...' : '';
+    if (!window.confirm(files.length + ' dosya silinecek:\n' + preview + suffix + '\n\nDevam edilsin mi?')) {
+      return;
+    }
+
+    const creds = readInstanceFtpCredentials(ftpState.instanceId);
+    if (!creds) {
+      return;
+    }
+
+    ftpState.loading = true;
+    ftpStatus.textContent = 'Siliniyor...';
+    ftpStatus.className = 'ftp-browser-status loading';
+
+    try {
+      const response = await fetch('/ayarlar/instance/' + encodeURIComponent(ftpState.instanceId) + '/ftp/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          host: creds.host,
+          user: creds.user,
+          password: creds.password,
+          path: ftpState.path,
+          files: files,
+        }),
+      });
+      const data = await response.json();
+      if (!data.ok) {
+        throw new Error(data.error || 'Silme basarisiz');
+      }
+      setFtpDeleteMode(false);
+      ftpStatus.textContent = (data.count || files.length) + ' dosya silindi';
+      ftpStatus.className = 'ftp-browser-status ok';
+      await loadFtpDirectory(ftpState.path);
+    } catch (err) {
+      ftpStatus.textContent = err.message || String(err);
+      ftpStatus.className = 'ftp-browser-status failed';
+    } finally {
+      ftpState.loading = false;
+    }
+  }
+
+  window.openFtpBrowserModal = function (instanceId, instanceName) {
+    ftpState.instanceId = instanceId;
+    ftpState.instanceName = instanceName || instanceId;
+    setFtpDeleteMode(false);
+    ftpTitle.textContent = 'FTP Tarayici — ' + ftpState.instanceName;
+    const creds = readInstanceFtpCredentials(instanceId);
+    if (creds) {
+      ftpMeta.textContent = (creds.host || '—') + ' · baslangic: ' + (creds.baseDir || '/');
+    }
+    ftpModal.showModal();
+    loadFtpDirectory((creds && creds.baseDir) || '/');
+  };
+
+  window.closeFtpBrowserModal = function () {
+    setFtpDeleteMode(false);
+    ftpModal.close();
+  };
+
+  document.querySelectorAll('.btn-ftp-browse').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      openFtpBrowserModal(btn.dataset.instanceId, btn.dataset.instanceName);
+    });
+  });
+
+  if (ftpUpBtn) {
+    ftpUpBtn.addEventListener('click', function () {
+      if (ftpState.deleteMode) {
+        return;
+      }
+      loadFtpDirectory(parentFtpPath(ftpState.path));
+    });
+  }
+
+  if (ftpRefreshBtn) {
+    ftpRefreshBtn.addEventListener('click', function () {
+      loadFtpDirectory(ftpState.path);
+    });
+  }
+
+  if (ftpDeleteBtn) {
+    ftpDeleteBtn.addEventListener('click', function () {
+      if (!ftpState.entries.length) {
+        return;
+      }
+      setFtpDeleteMode(true);
+      ftpStatus.textContent = 'Silme modu: boyutu 0 otomatik secilir · dosya tarihine gore son 5 yedek korunur';
+      ftpStatus.className = 'ftp-browser-status ok';
+    });
+  }
+
+  if (ftpCancelDeleteBtn) {
+    ftpCancelDeleteBtn.addEventListener('click', function () {
+      setFtpDeleteMode(false);
+      ftpStatus.textContent = 'Silme modu iptal edildi';
+      ftpStatus.className = 'ftp-browser-status ok';
+    });
+  }
+
+  if (ftpConfirmDeleteBtn) {
+    ftpConfirmDeleteBtn.addEventListener('click', function () {
+      deleteSelectedFtpFiles();
+    });
+  }
+
+  if (ftpModal) {
+    ftpModal.addEventListener('click', function (event) {
+      if (event.target === ftpModal) {
+        closeFtpBrowserModal();
+      }
+    });
+  }
+
+  toggleWeeklyDay();
+
+  document.querySelectorAll('.backup-protect-mode').forEach(function (select) {
+    function refreshProtectUi() {
+      const instanceId = select.dataset.instanceId;
+      const wrap = document.getElementById('protect-pass-wrap-' + instanceId);
+      const hint = document.getElementById('protect-hint-' + instanceId);
+      const mode = select.value;
+      const needsPass = mode === 'oracle' || mode === 'zip';
+      if (wrap) {
+        wrap.hidden = !needsPass;
+      }
+      if (hint) {
+        if (mode === 'oracle') {
+          hint.innerHTML = 'expdp compression=all + encryption=all, ardindan <strong>gzip</strong>. Dosya: <strong>.dmp.gz</strong>';
+        } else if (mode === 'zip') {
+          hint.innerHTML = 'expdp sikistirma + <strong>zip -P</strong> sifreli arsiv. Dosya: <strong>.zip</strong>';
+        } else {
+          hint.innerHTML = 'Mevcut yontem: expdp + gzip (<strong>.dmp.gz</strong>).';
+        }
+      }
+    }
+    select.addEventListener('change', refreshProtectUi);
+    refreshProtectUi();
+  });
+
+  const TURKISH_ASCII = {
+    '\u0131': 'I', '\u0130': 'I', '\u011f': 'G', '\u011e': 'G',
+    '\u00fc': 'U', '\u00dc': 'U', '\u015f': 'S', '\u015e': 'S',
+    '\u00f6': 'O', '\u00d6': 'O', '\u00e7': 'C', '\u00c7': 'C',
+  };
+
+  function normalizeUpperAscii(value) {
+    let text = String(value || '');
+    Object.keys(TURKISH_ASCII).forEach(function (ch) {
+      text = text.split(ch).join(TURKISH_ASCII[ch]);
+    });
+    text = text.toUpperCase().replace(/[^A-Z ]/g, '');
+    return text.replace(/\s+/g, ' ').trimStart();
+  }
+
+  document.querySelectorAll('.upper-ascii-field').forEach(function (input) {
+    input.addEventListener('input', function () {
+      const normalized = normalizeUpperAscii(input.value);
+      if (input.value !== normalized) {
+        input.value = normalized;
+      }
+    });
+    input.addEventListener('blur', function () {
+      input.value = normalizeUpperAscii(input.value).trim();
+    });
+  });
+
+  document.querySelectorAll('.btn-reveal-secret').forEach(function (btn) {
+    const targetId = btn.dataset.target;
+    const input = targetId ? document.getElementById(targetId) : null;
+    if (!input) {
+      return;
+    }
+
+    input.addEventListener('input', function () {
+      input.dataset.userEdited = '1';
+    });
+
+    btn.addEventListener('click', function () {
+      const secret = btn.dataset.secret || '';
+      const visible = btn.dataset.visible === '1';
+      if (visible) {
+        input.type = 'password';
+        if (input.dataset.userEdited !== '1') {
+          input.value = '';
+        }
+        btn.textContent = 'Goster';
+        btn.dataset.visible = '0';
+        return;
+      }
+      input.type = 'text';
+      input.value = secret;
+      input.dataset.userEdited = '0';
+      input.focus();
+      input.select();
+      btn.textContent = 'Gizle';
+      btn.dataset.visible = '1';
+    });
+  });
+})();
+</script>
+{% endblock %}

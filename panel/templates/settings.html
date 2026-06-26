@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Ayarlar - Yedek Panel{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Kurum Ayarlari</h1>
+  <p class="subtitle">Kaydettiginizde <code>yedekconfig.sh</code>, <code>yedek-params.sh</code> ve <code>.env</code> otomatik guncellenir.</p>
+
+  <form method="post" action="/ayarlar" class="form-grid wide">
+    <fieldset>
+      <legend>Kurum Bilgileri</legend>
+      <label>Hastane Adi <input type="text" name="hastane" value="{{ settings.hastane }}" required></label>
+      <label>Il <input type="text" name="il" value="{{ settings.il }}" required></label>
+      <label>Kurum Kodu <input type="text" name="kurumkodu" value="{{ settings.kurumkodu }}"></label>
+      <label>Yedek Kodu <input type="text" name="yedek_kodu" value="{{ settings.yedek_kodu }}"></label>
+      <label>GUID Key <input type="text" name="guid_key" value="{{ settings.guid_key }}"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Oracle</legend>
+      <label>Schema <input type="text" name="schemas" value="{{ settings.schemas }}" placeholder="SYSTEM veya AKILU2"></label>
+      <label>System Sifresi <input type="password" name="password" placeholder="Mevcut: {{ masked_password }}"></label>
+      <label>Oracle SID <input type="text" name="oracle_sid" value="{{ settings.oracle_sid }}"></label>
+      <label>Oracle Versiyon <input type="text" name="oracle_ver" value="{{ settings.oracle_ver }}"></label>
+      <label>Directory Adi <input type="text" name="directory" value="{{ settings.directory }}"></label>
+      <label>Yedek Dizini <input type="text" name="directorydizini" value="{{ settings.directorydizini }}"></label>
+      <label>Sunucu Adi (hostname) <input type="text" name="hostname" value="{{ settings.hostname }}"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>FTP ve Ag</legend>
+      <label>FTP IP <input type="text" name="localftpip" value="{{ settings.localftpip }}"></label>
+      <label>FTP Kullanici <input type="text" name="localftpuser" value="{{ settings.localftpuser }}"></label>
+      <label>FTP Sifre <input type="password" name="localftppass" placeholder="Mevcut: {{ masked_ftp_pass }}"></label>
+      <label>PASV Address <input type="text" name="pasv_address" value="{{ settings.pasv_address }}"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Yedek Politikasi</legend>
+      <label>Saklama Suresi (gun) <input type="number" min="1" max="365" name="retention_days" value="{{ settings.retention_days }}"></label>
+      <label>Yedek Dizini (Docker) <input type="text" name="yedek_dir" value="{{ settings.yedek_dir }}"></label>
+      <label>API Port <input type="number" name="api_port" value="{{ settings.api_port }}"></label>
+      <label>Panel Port <input type="number" name="panel_port" value="{{ settings.panel_port }}"></label>
+      <label class="full">Merkezi API URL <input type="url" name="remote_api_url" value="{{ settings.remote_api_url }}"></label>
+    </fieldset>
+
+    <div class="actions">
+      <button type="submit" class="btn primary">Kaydet ve Uygula</button>
+      <a href="/" class="btn">Iptal</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

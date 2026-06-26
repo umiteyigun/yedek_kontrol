@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %}Yedekler — Yedek Panel{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/dashboard.css">
+<link rel="stylesheet" href="/static/pages.css">
+{% endblock %}
+{% block body_class %}page-yedekler{% endblock %}
+{% block content %}
+<div class="dash-canvas">
+  <div class="dash-scene">
+    <div class="dash-ambient dash-ambient-a" aria-hidden="true"></div>
+    <div class="dash-ambient dash-ambient-b" aria-hidden="true"></div>
+
+    <header class="page-hero panel-3d reveal">
+      <div class="page-hero-text">
+        <p class="dash-eyebrow">Yedek Operasyon Merkezi</p>
+        <h1>{{ active_instance.hastane or 'Yedek Yonetimi' }}</h1>
+        <p class="dash-sub">
+          SID <strong>{{ active_instance.oracle_sid }}</strong> · {{ backup_count }} kayit · {{ user }}
+        </p>
+      </div>
+      <div class="page-hero-actions">
+        <form method="post" action="/yedekler/baslat" class="inline-form">
+          <input type="hidden" name="tip" value="GUNLUK">
+          <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
+          <button type="submit" class="btn-glow" {% if status.state == 'running' %}disabled{% endif %}>Gunluk Yedek</button>
+        </form>
+        <form method="post" action="/yedekler/baslat" class="inline-form">
+          <input type="hidden" name="tip" value="HAFTALIK">
+          <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
+          <button type="submit" class="btn-ghost" {% if status.state == 'running' %}disabled{% endif %}>Haftalik</button>
+        </form>
+        <a href="/" class="btn-ghost btn-sm">Duruma Don</a>
+      </div>
+    </header>
+
+    {% if instances|length > 1 %}
+    <nav class="instance-tabs reveal reveal-d1">
+      {% for inst in instances %}
+      <a href="/yedekler?instance={{ inst.id }}" class="instance-tab {% if inst.id == active_instance_id %}active{% endif %}">
+        {{ inst.display_name }} <span>{{ inst.oracle_sid }}</span>
+      </a>
+      {% endfor %}
+    </nav>
+    {% endif %}
+
+    <section class="mini-stat-row">
+      <article class="mini-stat panel-3d reveal reveal-d1">
+        <p class="label">Toplam Yedek</p>
+        <p class="value">{{ backup_count }}</p>
+        <p class="meta">{{ total_backup_mb }} MB</p>
+      </article>
+      <article class="mini-stat panel-3d reveal reveal-d2">
+        <p class="label">Durum</p>
+        <p class="value">
+          {% if status.state == 'running' %}Calisiyor
+          {% elif status.state == 'done' %}Tamamlandi
+          {% elif status.state == 'failed' %}Basarisiz
+          {% elif status.state == 'skipped' %}Atlandi
+          {% else %}Beklemede{% endif %}
+        </p>
+        <p class="meta">{% if status.instance_id %}{{ status.instance_id }}{% elif status.tip %}{{ status.tip }}{% else %}Hazir{% endif %}</p>
+      </article>
+      <article class="mini-stat panel-3d reveal reveal-d3">
+        <p class="label">Yedek Dizini</p>
+        <p class="value" style="font-size:0.95rem;">{{ settings.yedek_dir }}/</p>
+        <p class="meta">Instance: {{ active_instance_id }}</p>
+      </article>
+    </section>
+
+    {% if status.state == 'running' %}
+    <div class="status-banner running panel-3d reveal reveal-d2">
+      <span class="pulse" style="width:8px;height:8px;border-radius:50%;background:currentColor;display:inline-block;box-shadow:0 0 12px currentColor;"></span>
+      Yedek su an calisiyor{% if status.instance_id %} ({{ status.instance_id }}){% endif %} — sayfayi yenileyin.
+    </div>
+    {% elif status.state == 'done' %}
+    <div class="status-banner done panel-3d reveal reveal-d2">
+      Son yedek tamamlandi: <strong>{{ status.updated_at }}</strong>
+      {% if can_settings and status.log_file %}
+      — <button type="button" class="btn-log-view btn-ghost btn-sm" data-log-source="panel" data-log-name="{{ status.log_file }}">Log</button>
+      {% endif %}
+    </div>
+    {% elif status.state == 'failed' %}
+    <div class="status-banner failed panel-3d reveal reveal-d2">
+      Son yedek basarisiz (cikis: {{ status.exit_code }}).
+      {% if can_settings and status.log_file %}
+      <button type="button" class="btn-log-view" data-log-source="panel" data-log-name="{{ status.log_file }}">Logu ac</button>
+      {% endif %}
+    </div>
+    {% elif status.state == 'skipped' %}
+    <div class="status-banner failed panel-3d reveal reveal-d2">
+      Yedek disk guvenligi nedeniyle baslatilmadi: {{ status.reason or 'Yetersiz alan' }}
+    </div>
+    {% endif %}
+
+    <section class="content-panel panel-3d reveal reveal-d3">
+      <div class="panel-head-row">
+        <h2 class="panel-title"><span class="title-accent"></span>{{ active_instance.hastane }} Yedekleri</h2>
+        <span class="panel-count">{{ backups|length }} dosya</span>
+      </div>
+
+      {% if backups %}
+      <form method="post" action="/yedekler/ftp-gonder" id="ftp-resend-form">
+        <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
+        <div class="backup-bulk-bar">
+          <label class="backup-select-all">
+            <input type="checkbox" id="backup-select-all" aria-label="Tumunu sec">
+            <span>Tumunu sec</span>
+          </label>
+          <button
+            type="submit"
+            class="btn-glow btn-sm"
+            id="ftp-resend-btn"
+            onclick="return confirmFtpResend();"
+          >FTP'ye Tekrar Gonder</button>
+          <span class="muted backup-selected-count" id="backup-selected-count">0 secili</span>
+        </div>
+
+        <div class="data-table-wrap">
+          <table class="data-table backup-table">
+            <thead>
+              <tr>
+                <th class="col-check" aria-label="Secim"></th>
+                <th>Dosya</th>
+                <th>Boyut</th>
+                <th>Tarih</th>
+                <th>Islem</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in backups %}
+              <tr>
+                <td class="col-check">
+                  <input
+                    type="checkbox"
+                    class="backup-select"
+                    name="archive_names"
+                    value="{{ item.base_name }}"
+                    aria-label="{{ item.archive_name }} sec"
+                  >
+                </td>
+                <td><span class="file-name">{{ item.archive_name }}</span></td>
+                <td>{{ item.size_mb }} MB</td>
+                <td>{{ item.mtime }}</td>
+                <td>
+                  <div class="row-actions">
+                    {% if can_settings and item.has_log %}
+                    <button type="button" class="btn-ghost btn-sm btn-log-view" data-log-source="expdp" data-log-name="{{ item.log_name }}" data-log-instance="{{ active_instance_id }}">Log</button>
+                    {% elif can_settings %}
+                    <span class="muted" style="font-size:0.8rem;">Log yok</span>
+                    {% endif %}
+                    {% if can_settings %}
+                    <button
+                      type="submit"
+                      class="btn-danger btn-sm"
+                      form="delete-form-{{ loop.index }}"
+                      onclick="return confirm('Bu yedegi silmek istediginize emin misiniz?');"
+                    >Sil</button>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </form>
+      {% for item in backups %}
+      {% if can_settings %}
+      <form
+        method="post"
+        action="/yedekler/sil"
+        id="delete-form-{{ loop.index }}"
+        class="backup-delete-form"
+        hidden
+      >
+        <input type="hidden" name="archive_name" value="{{ item.archive_name }}">
+        <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
+      </form>
+      {% endif %}
+      {% endfor %}
+      {% else %}
+      <div class="empty-state">
+        <div class="empty-icon" aria-hidden="true"></div>
+        <p>Bu instance icin henuz yedek yok.</p>
+        {% if can_settings %}<a href="/ayarlar" class="btn-glow">Ayarlara Git</a>{% endif %}
+      </div>
+      {% endif %}
+    </section>
+  </div>
+</div>
+<script>
+(function () {
+  var selectAll = document.getElementById('backup-select-all');
+  var boxes = document.querySelectorAll('.backup-select');
+  var countEl = document.getElementById('backup-selected-count');
+
+  function updateCount() {
+    if (!countEl) return;
+    var n = document.querySelectorAll('.backup-select:checked').length;
+    countEl.textContent = n + ' secili';
+    if (selectAll) {
+      selectAll.indeterminate = n > 0 && n < boxes.length;
+      selectAll.checked = boxes.length > 0 && n === boxes.length;
+    }
+  }
+
+  if (selectAll) {
+    selectAll.addEventListener('change', function () {
+      boxes.forEach(function (box) { box.checked = selectAll.checked; });
+      updateCount();
+    });
+  }
+
+  boxes.forEach(function (box) {
+    box.addEventListener('change', updateCount);
+  });
+
+  window.confirmFtpResend = function () {
+    var n = document.querySelectorAll('.backup-select:checked').length;
+    if (!n) {
+      alert('FTP icin en az bir yedek secin.');
+      return false;
+    }
+    return confirm(n + ' yedek FTP sunucusuna tekrar gonderilsin mi?');
+  };
+
+  updateCount();
+})();
+</script>
+{% endblock %}

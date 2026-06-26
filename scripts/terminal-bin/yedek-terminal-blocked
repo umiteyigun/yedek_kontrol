@@ -1,0 +1,4 @@
+#!/bin/bash
+echo "[Yedek Terminal] Bu komut panel terminalinde devre disi: $(basename "$0")" >&2
+echo "Sifre degistirme ve hassas dosya erisimi engellenmistir." >&2
+exit 126

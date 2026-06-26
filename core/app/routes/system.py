@@ -1,0 +1,232 @@
+from pathlib import Path
+from typing import Any
+from urllib.parse import quote_plus
+
+from fastapi import APIRouter, Form, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from app.web.templates_env import templates
+
+from app.auth import can_manage_settings, get_current_user, login_redirect, settings_denied_redirect
+from app.config.ldap_config import LDAP_SETTINGS_DEFAULTS
+from app.config.models import YedekSettings
+from app.routes.context import page_context
+from app.services.ldap_auth import test_ldap_connection
+from app.services.server_info import clear_server_info_cache
+from app.services.server_time import collect_host_clock, list_host_timezones, set_host_clock, set_host_timezone
+
+router = APIRouter(tags=["system"])
+AUTH_MODE_LABELS = {
+    "ldap": "Yalnizca LDAP",
+    "local": "Yalnizca yerel kullanicilar",
+    "ldap_and_local": "LDAP + yerel kullanicilar",
+}
+
+
+def _field(form, name: str, default: str = "") -> str:
+    value = form.get(name)
+    return str(value).strip() if value is not None else default
+
+
+def _parse_auth_form(form, current: YedekSettings) -> dict[str, Any]:
+    payload = current.model_dump()
+    auth_mode = _field(form, "auth_mode", current.auth_mode)
+    if auth_mode not in AUTH_MODE_LABELS:
+        auth_mode = current.auth_mode
+    payload.update(
+        {
+            "auth_mode": auth_mode,
+            "ldap_enabled": form.get("ldap_enabled") == "1",
+            "ldap_host": _field(form, "ldap_host", current.ldap_host),
+            "ldap_port": int(_field(form, "ldap_port", str(current.ldap_port)) or current.ldap_port),
+            "ldap_use_ssl": form.get("ldap_use_ssl") == "1",
+            "ldap_base_dn": _field(form, "ldap_base_dn", current.ldap_base_dn),
+            "ldap_user_dn_template": _field(form, "ldap_user_dn_template", current.ldap_user_dn_template),
+            "ldap_group_base": _field(form, "ldap_group_base", current.ldap_group_base),
+            "ldap_groups_full": _field(form, "ldap_groups_full", current.ldap_groups_full),
+            "ldap_groups_limited": _field(form, "ldap_groups_limited", current.ldap_groups_limited),
+            "ldap_bind_dn": _field(form, "ldap_bind_dn", current.ldap_bind_dn),
+            "ldap_search_filter": _field(form, "ldap_search_filter", current.ldap_search_filter),
+        }
+    )
+    bind_pass = _field(form, "ldap_bind_password")
+    if bind_pass:
+        payload["ldap_bind_password"] = bind_pass
+    return payload
+
+
+@router.get("/sistem", response_class=HTMLResponse)
+def system_page(request: Request):
+    if not get_current_user(request):
+        return login_redirect()
+    if not can_manage_settings(request):
+        return settings_denied_redirect()
+
+    store = request.app.state.store
+    local_store = request.app.state.local_user_store
+    settings = store.get()
+    ctx = page_context(
+        request,
+        settings,
+        message=request.query_params.get("message", ""),
+        error=request.query_params.get("error", ""),
+    )
+    ctx.update(
+        {
+            "auth_mode_labels": AUTH_MODE_LABELS,
+            "ldap_defaults": LDAP_SETTINGS_DEFAULTS,
+            "local_users": local_store.list_users(),
+            "ldap_has_bind_password": bool(settings.ldap_bind_password),
+            "timezone_options": list_host_timezones(),
+            "host_clock": collect_host_clock(),
+        }
+    )
+    return templates.TemplateResponse("sistem.html", ctx)
+
+
+@router.post("/sistem/kaydet")
+async def system_save(request: Request):
+    if not get_current_user(request):
+        return login_redirect()
+    if not can_manage_settings(request):
+        return settings_denied_redirect()
+
+    form = await request.form()
+    store = request.app.state.store
+    current = store.get()
+    try:
+        parsed = _parse_auth_form(form, current)
+        updated = YedekSettings.model_validate(parsed)
+        store.replace(updated.model_dump())
+    except Exception as exc:  # noqa: BLE001
+        return RedirectResponse(url=f"/sistem?error={quote_plus(str(exc))}", status_code=303)
+
+    return RedirectResponse(url="/sistem?message=Kimlik+dogrulama+ayarlari+kaydedildi", status_code=303)
+
+
+@router.post("/sistem/ldap/test")
+async def system_ldap_test(request: Request):
+    if not can_manage_settings(request):
+        return JSONResponse({"ok": False, "message": "Yetkisiz"}, status_code=403)
+
+    form = await request.form()
+    store = request.app.state.store
+    current = store.get()
+    try:
+        draft = YedekSettings.model_validate(_parse_auth_form(form, current))
+        ok, message = test_ldap_connection(draft)
+        return JSONResponse({"ok": ok, "message": message})
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"ok": False, "message": str(exc)}, status_code=400)
+
+
+@router.post("/sistem/yerel/ekle")
+async def system_local_add(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    role: str = Form("limited"),
+):
+    if not get_current_user(request):
+        return login_redirect()
+    if not can_manage_settings(request):
+        return settings_denied_redirect()
+
+    local_store = request.app.state.local_user_store
+    try:
+        local_store.add_user(username, password, role)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/sistem?error={quote_plus(str(exc))}", status_code=303)
+
+    return RedirectResponse(url="/sistem?message=Yerel+kullanici+eklendi", status_code=303)
+
+
+@router.post("/sistem/yerel/{username}/guncelle")
+async def system_local_update(
+    request: Request,
+    username: str,
+    role: str = Form(""),
+    enabled: str = Form(""),
+    password: str = Form(""),
+):
+    if not get_current_user(request):
+        return login_redirect()
+    if not can_manage_settings(request):
+        return settings_denied_redirect()
+
+    local_store = request.app.state.local_user_store
+    try:
+        local_store.update_user(
+            username,
+            role=role or None,
+            enabled=(enabled == "1") if enabled else None,
+            password=password or None,
+        )
+    except ValueError as exc:
+        return RedirectResponse(url=f"/sistem?error={quote_plus(str(exc))}", status_code=303)
+
+    return RedirectResponse(url="/sistem?message=Kullanici+guncellendi", status_code=303)
+
+
+@router.post("/sistem/yerel/{username}/sil")
+async def system_local_delete(request: Request, username: str):
+    if not get_current_user(request):
+        return login_redirect()
+    if not can_manage_settings(request):
+        return settings_denied_redirect()
+
+    local_store = request.app.state.local_user_store
+    try:
+        local_store.delete_user(username)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/sistem?error={quote_plus(str(exc))}", status_code=303)
+
+    return RedirectResponse(url="/sistem?message=Kullanici+silindi", status_code=303)
+
+
+@router.post("/sistem/saat-dilimi")
+async def system_set_timezone(request: Request, server_timezone: str = Form(...)):
+    if not get_current_user(request):
+        return login_redirect()
+    if not can_manage_settings(request):
+        return settings_denied_redirect()
+
+    store = request.app.state.store
+    current = store.get()
+    ok, message, _clock = set_host_timezone(server_timezone)
+    if not ok:
+        return RedirectResponse(url=f"/sistem?error={quote_plus(message)}", status_code=303)
+
+    payload = current.model_dump()
+    payload["server_timezone"] = server_timezone.strip()
+    store.replace(payload)
+    clear_server_info_cache()
+    return RedirectResponse(url=f"/sistem?message={quote_plus(message)}", status_code=303)
+
+
+@router.post("/sistem/saat")
+async def system_set_clock(
+    request: Request,
+    clock_date: str = Form(...),
+    clock_time: str = Form(...),
+    server_timezone: str = Form(...),
+    return_to: str = Form("/"),
+):
+    if not get_current_user(request):
+        return login_redirect()
+    if not can_manage_settings(request):
+        return settings_denied_redirect()
+
+    store = request.app.state.store
+    current = store.get()
+    ok, message, _clock = set_host_clock(clock_date, clock_time, server_timezone)
+    if not ok:
+        target = return_to if return_to.startswith("/") else "/"
+        return RedirectResponse(url=f"{target}?error={quote_plus(message)}", status_code=303)
+
+    payload = current.model_dump()
+    payload["server_timezone"] = server_timezone.strip()
+    store.replace(payload)
+    clear_server_info_cache()
+
+    target = return_to if return_to.startswith("/") else "/"
+    return RedirectResponse(url=f"{target}?message={quote_plus(message)}", status_code=303)

@@ -1,0 +1,51 @@
+# Her Oracle/DB sunucusunda ayri calistirilir.
+# Kurulum: bash setup.sh
+
+services:
+  core:
+    build: ./core
+    container_name: yedek-core
+    restart: unless-stopped
+    network_mode: host
+    privileged: true
+    pid: host
+    volumes:
+      - ./config:/app/config
+      - /yedek/config:/host-output
+      - /yedek/orayedek:/yedek/orayedek
+      - /yedek/config/yedekconfig.sh:/host-config/yedekconfig.sh:ro
+    environment:
+      CONFIG_DIR: /app/config
+      HOST_OUTPUT: /host-output
+      YEDEK_DIR: /yedek/orayedek
+      HOST_YEDEKCONFIG: /host-config/yedekconfig.sh
+      PANEL_USER: ${MASTER_USER:-trtek-master}
+      PANEL_PASS: ${MASTER_PASS:-}
+      MASTER_USER: ${MASTER_USER:-trtek-master}
+      MASTER_PASS: ${MASTER_PASS:-}
+      PANEL_SECRET: ${PANEL_SECRET:-degistirin}
+      SESSION_MAX_AGE: ${SESSION_MAX_AGE:-7200}
+      TERMINAL_SESSION_MAX_AGE: ${TERMINAL_SESSION_MAX_AGE:-900}
+      TERMINAL_MAX_SEC: ${TERMINAL_MAX_SEC:-1800}
+      TERMINAL_MAX_SESSIONS: ${TERMINAL_MAX_SESSIONS:-10}
+      TERMINAL_MAX_PER_USER: ${TERMINAL_MAX_PER_USER:-0}
+      COOKIE_SECURE: ${COOKIE_SECURE:-0}
+      SESSION_BIND_IP: ${SESSION_BIND_IP:-1}
+      SESSION_BIND_UA: ${SESSION_BIND_UA:-1}
+      LOGIN_RATE_LIMIT: ${LOGIN_RATE_LIMIT:-8}
+      TZ: ${TZ:-Europe/Istanbul}
+    env_file:
+      - /yedek/config/central-agent.env
+
+  # Merkez hub'a outbound tünel (kurum kodu /yedek/config/central-agent.env)
+  central-agent:
+    build: ./agent
+    container_name: yedek-central-agent
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - /yedek/config/central-agent.env
+    volumes:
+      - /yedek/config/agent-state:/var/lib/yedek-agent
+    profiles:
+      - central

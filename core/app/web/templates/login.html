@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Giris — TRTEK Yedek Koruma</title>
+  <link rel="stylesheet" href="/static/login.css">
+</head>
+<body class="login-body">
+  <div class="login-scene">
+    <div class="grid-glow" aria-hidden="true"></div>
+    <div class="orb orb-a" aria-hidden="true"></div>
+    <div class="orb orb-b" aria-hidden="true"></div>
+
+    <aside class="login-visual" aria-hidden="true">
+      <div class="visual-image" style="background-image: url('/static/img/login-backup-hero.png')"></div>
+      <div class="visual-overlay"></div>
+      <div class="visual-copy">
+        <p class="visual-tag">Kritik Altyapi</p>
+        <h2>Veriniz<br><span>koruma altinda</span></h2>
+        <ul class="visual-points">
+          <li>Oracle yedekleri otomatik ve izlenebilir</li>
+          <li>Kurumsal guvenlik ile merkezi yonetim</li>
+          <li>Kesinti aninda geri donus hazirligi</li>
+        </ul>
+      </div>
+    </aside>
+
+    <main class="login-panel">
+      <div class="login-card">
+        <div class="brand-lockup">
+          <div class="brand-icon" aria-hidden="true">
+            <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M24 4L40 12V24C40 33.2 33.2 40.8 24 44C14.8 40.8 8 33.2 8 24V12L24 4Z" stroke="currentColor" stroke-width="2.2"/>
+              <path d="M18 24L22 28L30 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div>
+            <p class="brand-eyebrow">TRTEK Yazilim</p>
+            <h1>Yedek Koruma Paneli</h1>
+          </div>
+        </div>
+
+        <p class="login-lead">Kurum verilerinizi guvence altina alan yedek yonetim merkezi.</p>
+
+        {% if error %}
+        <div class="login-alert" role="alert">{{ error }}</div>
+        {% endif %}
+
+        <form method="post" action="/login" class="login-form">
+          <label class="field">
+            <span>Kullanici adi</span>
+            <input type="text" name="username" required autocomplete="username" placeholder="LDAP veya yerel kullanici">
+          </label>
+          <label class="field">
+            <span>Sifre</span>
+            <input type="password" name="password" required autocomplete="current-password" placeholder="••••••••">
+          </label>
+          <button type="submit" class="login-submit">
+            <span>Panele Gir</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 12H19M19 12L13 6M19 12L13 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </form>
+
+        <footer class="login-foot">
+          <span class="pill">LDAP</span>
+          <span class="pill">ad.trtekyazilim.com</span>
+          <span class="pill">admins · yedek-data</span>
+          <p>LDAP veya panel yoneticisinin tanimladigi yerel kullanici ile giris</p>
+        </footer>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

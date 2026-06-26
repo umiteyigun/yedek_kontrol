@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Giris - Yedek Panel{% endblock %}
+{% block content %}
+<section class="card login-card">
+  <h1>Yedek Panel Girisi</h1>
+  <p class="subtitle">Kurum yedek ayarlarini buradan yonetebilirsiniz.</p>
+  <form method="post" action="/login" class="form-grid">
+    <label>
+      Kullanici Adi
+      <input type="text" name="username" required autocomplete="username">
+    </label>
+    <label>
+      Sifre
+      <input type="password" name="password" required autocomplete="current-password">
+    </label>
+    <button type="submit" class="btn primary">Giris Yap</button>
+  </form>
+</section>
+{% endblock %}

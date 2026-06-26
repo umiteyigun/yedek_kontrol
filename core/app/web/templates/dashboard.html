@@ -1,0 +1,520 @@
+{% extends "base.html" %}
+{% block title %}Durum — Yedek Panel{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/dashboard.css">
+<link rel="stylesheet" href="/static/pages.css">
+{% endblock %}
+{% block body_class %}dashboard-page{% endblock %}
+{% block content %}
+<div class="dash-canvas">
+  <div class="dash-scene">
+    <div class="dash-ambient dash-ambient-a" aria-hidden="true"></div>
+    <div class="dash-ambient dash-ambient-b" aria-hidden="true"></div>
+
+  <header class="dash-hero panel-3d reveal">
+    <div class="dash-hero-text">
+      <p class="dash-eyebrow">Canli Izleme · {{ instance_count }} kurum · {{ settings.hostname }}</p>
+      <h1>Oracle Sunucusu <span class="dim">/ {{ server_info.hostname or settings.hostname }}</span></h1>
+      <p class="dash-sub">
+        <span class="oracle-pill open">{{ oracle_open_count }} acik</span>
+        <span class="oracle-pill closed">{{ oracle_closed_count }} kapali</span>
+        · config <strong>v{{ config_version }}</strong> · {{ user }}
+      </p>
+    </div>
+    <div class="dash-hero-actions">
+      <div class="status-pill {% if health_ok %}ok{% else %}warn{% endif %}">
+        <span class="pulse"></span>
+        {{ 'Sistem saglikli' if health_ok else 'Disk uyari' }}
+      </div>
+      <a href="/yedekler{% if active_instance_id %}?instance={{ active_instance_id }}{% endif %}" class="btn-glow">Yedekleri Yonet</a>
+      {% if can_settings %}<a href="/ayarlar" class="btn-ghost">Ayarlar</a>{% endif %}
+    </div>
+  </header>
+
+  <section class="server-summary-block reveal reveal-d1">
+    <div class="panel-head">
+      <h2 class="panel-title"><span class="title-accent"></span>Sunucu Ozeti</h2>
+      <span class="panel-meta">{{ server_info.hostname or settings.hostname }}</span>
+    </div>
+
+    <article class="server-clock-bar panel-3d" id="server-clock-bar">
+      <div class="server-clock-bar-track" aria-hidden="true"><span class="server-clock-bar-pulse"></span></div>
+      <div class="server-clock-bar-body">
+        <div class="server-clock-bar-view" id="clock-view-mode">
+          <div class="clock-bar-segment clock-bar-time-wrap">
+            <span class="clock-bar-label">Sunucu Saati</span>
+            <strong class="clock-bar-time" id="server-live-clock">{{ server_info.clock_time or '—:—:—' }}</strong>
+          </div>
+          <div class="clock-bar-segment clock-bar-date-wrap">
+            <span class="clock-bar-label">Tarih</span>
+            <strong class="clock-bar-date" id="server-live-date">{{ server_info.clock_date or '—' }}</strong>
+            <span class="clock-bar-sub" id="server-live-weekday"></span>
+          </div>
+          <div class="clock-bar-segment clock-bar-tz-wrap">
+            <span class="clock-bar-label">Saat Dilimi</span>
+            <strong class="clock-bar-tz" id="server-timezone-label" title="{{ server_info.timezone }}">{{ server_info.timezone_label or server_info.timezone or '—' }}</strong>
+            <span class="clock-bar-tz-iana" id="server-timezone-iana">{{ server_info.timezone if server_info.timezone and server_info.timezone != '—' else '' }}</span>
+            {% if server_info.utc_offset %}<span class="clock-bar-offset" id="server-timezone-offset">UTC{{ server_info.utc_offset }}</span>{% endif %}
+            {% if server_info.ntp_synchronized %}
+            <span class="clock-bar-ntp" id="server-ntp-status">NTP: {{ 'aktif' if server_info.ntp_synchronized in ('yes', '1', 'true') else 'kapali' }}</span>
+            {% endif %}
+          </div>
+          {% if can_admin %}
+          <button type="button" class="btn-ghost btn-sm clock-bar-edit-btn" id="clock-edit-toggle">Duzenle</button>
+          {% endif %}
+        </div>
+      </div>
+    </article>
+
+    <section class="stat-grid">
+      <article class="stat-tile panel-3d tilt">
+        <div class="stat-icon stat-icon-mem" aria-hidden="true">R</div>
+        <p class="stat-label">RAM</p>
+        <p class="stat-value">{{ server_info.mem_used_pct or 0 }}%</p>
+        <div class="mini-bar{% if server_info.mem_used_pct > 85 %} warn{% endif %}"><span style="width: {{ server_info.mem_used_pct or 0 }}%"></span></div>
+        <p class="stat-meta">{{ server_info.mem_used or '—' }} / {{ server_info.mem_total or '—' }}</p>
+      </article>
+      <article class="stat-tile panel-3d tilt">
+        <div class="stat-icon stat-icon-cpu" aria-hidden="true">{{ server_info.cpu_cores or '—' }}</div>
+        <p class="stat-label">CPU</p>
+        <p class="stat-value stat-sm">{{ server_info.load_avg or '—' }}</p>
+        <p class="stat-meta">load avg · {{ server_info.cpu_cores or '—' }} cekirdek</p>
+      </article>
+      <article class="stat-tile panel-3d tilt">
+        <div class="stat-icon disk-root" aria-hidden="true">/</div>
+        <p class="stat-label">Disk Kok</p>
+        <p class="stat-value">{{ server_info.disk_root_pct or 0 }}%</p>
+        <div class="mini-bar{% if server_info.disk_root_pct > 85 %} warn{% endif %}"><span style="width: {{ server_info.disk_root_pct or 0 }}%"></span></div>
+        <p class="stat-meta">{{ server_info.disk_root_used_gb|round(1) }} / {{ server_info.disk_root_total_gb|round(1) }} GB</p>
+      </article>
+      <article class="stat-tile panel-3d tilt">
+        <div class="stat-icon disk-yedek" aria-hidden="true">Y</div>
+        <p class="stat-label">Disk Yedek</p>
+        <p class="stat-value">{{ server_info.disk_yedek_pct or 0 }}%</p>
+        <div class="mini-bar accent{% if server_info.disk_yedek_pct > 85 %} warn{% endif %}"><span style="width: {{ server_info.disk_yedek_pct or 0 }}%"></span></div>
+        <p class="stat-meta">{{ server_info.disk_yedek_used_gb|round(1) }} / {{ server_info.disk_yedek_total_gb|round(1) }} GB</p>
+      </article>
+    </section>
+
+    <section class="dash-grid-main server-detail-grid">
+      <article class="panel-3d info-panel embossed">
+        <h2 class="panel-title"><span class="title-accent"></span>Sistem</h2>
+        <div class="info-stack">
+          <div class="info-chip"><span>Isletim Sistemi</span><strong>{{ server_info.os_name or '—' }}</strong></div>
+          <div class="info-chip"><span>Kernel</span><strong>{{ server_info.kernel or '—' }}</strong></div>
+          <div class="info-chip"><span>Mimari</span><strong>{{ server_info.arch or '—' }}</strong></div>
+          <div class="info-chip"><span>CPU Model</span><strong>{{ server_info.cpu_model or '—' }}</strong></div>
+          <div class="info-chip"><span>Hostname</span><strong>{{ server_info.hostname or settings.hostname }}</strong></div>
+        </div>
+      </article>
+      <article class="panel-3d info-panel embossed">
+        <h2 class="panel-title"><span class="title-accent"></span>Oracle Instance'lar</h2>
+        <div class="info-stack">
+          <div class="info-chip"><span>Versiyon</span><strong>{{ server_info.oracle_version_full or server_info.oracle_ver or '—' }}</strong></div>
+          {% for inst in instance_summaries %}
+          <div class="info-chip oracle-instance-chip">
+            <div class="oracle-instance-chip-head">
+              <span>{{ inst.display_name }} <small class="chip-sid">{{ inst.oracle_sid }}</small></span>
+              <span class="instance-oracle-badge {% if inst.oracle_running %}open{% else %}closed{% endif %} oracle-badge-sm">
+                <span class="instance-status-dot {% if inst.oracle_running %}ok{% else %}off{% endif %}"></span>
+                {{ inst.oracle_status_label }}
+              </span>
+            </div>
+            {% if inst.oracle_stats_ok %}
+            <div class="oracle-metric-cells">
+              <div><span>Data</span><strong>{{ inst.data_size_label }}</strong></div>
+              <div><span>SGA</span><strong>{{ inst.sga_label }}</strong></div>
+              <div><span>PGA</span><strong>{{ inst.pga_label }}</strong></div>
+            </div>
+            {% else %}
+            <p class="oracle-metric-unavailable">{{ inst.oracle_stats_message }}</p>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </article>
+    </section>
+  </section>
+
+  {% if instance_summaries|length > 0 %}
+  <section class="instance-overview-grid reveal reveal-d1">
+    {% for inst in instance_summaries %}
+    <article class="instance-overview-card panel-3d {% if inst.id == active_instance_id %}active-card{% endif %} {% if inst.oracle_running %}instance-open{% else %}instance-closed{% endif %}">
+      <div class="instance-overview-head">
+        <div>
+          <p class="instance-overview-eyebrow">{{ inst.il or 'Kurum' }}</p>
+          <h3>{{ inst.display_name }}</h3>
+          <p class="instance-overview-sid">SID: <strong>{{ inst.oracle_sid }}</strong></p>
+        </div>
+        <span class="instance-oracle-badge {% if inst.oracle_running %}open{% else %}closed{% endif %}">
+          <span class="instance-status-dot {% if inst.oracle_running %}ok{% else %}off{% endif %}"></span>
+          {{ inst.oracle_status_label }}
+        </span>
+      </div>
+      <div class="instance-overview-stats">
+        <div><span>Yedek</span><strong>{{ inst.backup_count }}</strong></div>
+        <div><span>Yedek MB</span><strong>{{ inst.total_backup_mb }}</strong></div>
+        <div><span>Kod</span><strong>{{ inst.yedek_kodu }}</strong></div>
+      </div>
+      {% if inst.oracle_stats_ok %}
+      <div class="oracle-metric-cells instance-oracle-stats">
+        <div><span>Data</span><strong>{{ inst.data_size_label }}</strong></div>
+        <div><span>SGA</span><strong>{{ inst.sga_label }}</strong></div>
+        <div><span>PGA</span><strong>{{ inst.pga_label }}</strong></div>
+      </div>
+      {% else %}
+      <div class="instance-oracle-unavailable">
+        {{ inst.oracle_stats_message }}
+      </div>
+      {% endif %}
+      {% if inst.last_backup %}
+      <div class="instance-last-backup">
+        <span>Son yedek</span>
+        <code>{{ inst.last_backup.name }}</code>
+        <small>{{ inst.last_backup.mtime }} · {{ inst.last_backup.size_mb }} MB</small>
+      </div>
+      {% else %}
+      <div class="instance-last-backup empty">
+        <span>Henuz yedek yok</span>
+      </div>
+      {% endif %}
+      <div class="instance-overview-actions">
+        <a href="/?instance={{ inst.id }}" class="btn-ghost btn-sm">Durum</a>
+        <a href="/yedekler?instance={{ inst.id }}" class="btn-glow btn-sm">Yedekler</a>
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if instance_summaries|length > 1 %}
+  <nav class="instance-tabs reveal reveal-d2">
+    <span class="instance-tabs-label">Detay:</span>
+    {% for inst in instances %}
+    <a href="/?instance={{ inst.id }}" class="instance-tab {% if inst.id == active_instance_id %}active{% endif %}">
+      <span class="instance-status-dot {% if inst.oracle_running %}ok{% else %}off{% endif %}"></span>
+      {{ inst.display_name }} <span>{{ inst.oracle_sid }}</span>
+    </a>
+    {% endfor %}
+  </nav>
+  {% elif instances|length > 1 %}
+  <nav class="instance-tabs reveal reveal-d1">
+    {% for inst in instances %}
+    <a href="/?instance={{ inst.id }}" class="instance-tab {% if inst.id == active_instance_id %}active{% endif %}">
+      <span class="instance-status-dot {% if inst.oracle_running %}ok{% else %}off{% endif %}"></span>
+      {{ inst.display_name }} <span>{{ inst.oracle_sid }}</span>
+    </a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+
+  <section class="stat-grid">
+    <article class="stat-tile panel-3d tilt reveal reveal-d1">
+      <div class="stat-icon stat-icon-data" aria-hidden="true">D</div>
+      <p class="stat-label">Oracle Data</p>
+      <p class="stat-value stat-sm">{% if active_instance.oracle_stats_ok %}{{ active_instance.data_size_label }}{% else %}—{% endif %}</p>
+      <p class="stat-meta">{% if active_instance.oracle_stats_ok %}SID {{ active_instance.oracle_sid }}{% else %}{{ active_instance.oracle_stats_message or '—' }}{% endif %}</p>
+    </article>
+    <article class="stat-tile panel-3d tilt reveal reveal-d2">
+      <div class="stat-icon stat-icon-sga" aria-hidden="true">S</div>
+      <p class="stat-label">SGA / PGA</p>
+      <p class="stat-value stat-sm">{% if active_instance.oracle_stats_ok %}{{ active_instance.sga_label }}{% else %}—{% endif %}</p>
+      <p class="stat-meta">{% if active_instance.oracle_stats_ok %}PGA {{ active_instance.pga_label }}{% else %}Secili instance{% endif %}</p>
+    </article>
+    <article class="stat-tile panel-3d tilt reveal reveal-d3">
+      <div class="stat-icon backup-count" aria-hidden="true">{% if instance_count > 1 %}{{ total_all_backups }}{% else %}{{ backup_count }}{% endif %}</div>
+      <p class="stat-label">{% if instance_count > 1 %}Toplam Yedek (Tum Kurumlar){% else %}Toplam Yedek{% endif %}</p>
+      <p class="stat-value">{% if instance_count > 1 %}{{ total_all_backups }}{% else %}{{ backup_count }}{% endif %} <small>dosya</small></p>
+      <p class="stat-meta">{% if instance_count > 1 %}{{ total_all_backup_mb }}{% else %}{{ total_backup_mb }}{% endif %} MB</p>
+    </article>
+    <article class="stat-tile panel-3d tilt reveal reveal-d4">
+      <div class="stat-icon config" aria-hidden="true">v{{ config_version }}</div>
+      <p class="stat-label">Son Uygulama</p>
+      <p class="stat-value stat-sm">{{ applied_at }}</p>
+      <p class="stat-meta">Uzak FTP · kurum bazli</p>
+    </article>
+  </section>
+
+  <section class="dash-grid-main">
+    <article class="panel-3d chart-panel reveal reveal-d2">
+      <h2 class="panel-title"><span class="title-accent"></span>Depolama Analizi</h2>
+      <div class="donut-row">
+        <div class="donut-wrap">
+          <p class="donut-label">Kok Partition</p>
+          <div class="donut-svg-wrap">
+          <svg class="donut" viewBox="0 0 120 120" aria-label="Disk kok {{ disk_root }}">
+            <defs>
+              <linearGradient id="gradRoot" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#2ee8c0"/>
+                <stop offset="100%" stop-color="#1a6b8a"/>
+              </linearGradient>
+            </defs>
+            <circle class="donut-bg" cx="60" cy="60" r="48"/>
+            <circle class="donut-fill" cx="60" cy="60" r="48"
+              stroke="url(#gradRoot)"
+              stroke-dasharray="{{ disk_root_pct * 3.016 }} 301.6"
+              transform="rotate(-90 60 60)"/>
+          </svg>
+          <div class="donut-center">
+            <strong>{{ disk_root }}</strong>
+            <span>/</span>
+          </div>
+          </div>
+        </div>
+        <div class="donut-wrap">
+          <p class="donut-label">Yedek Partition</p>
+          <div class="donut-svg-wrap">
+          <svg class="donut" viewBox="0 0 120 120" aria-label="Disk yedek {{ disk_yedek }}">
+            <defs>
+              <linearGradient id="gradYedek" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#6ec8ff"/>
+                <stop offset="100%" stop-color="#2ee8c0"/>
+              </linearGradient>
+            </defs>
+            <circle class="donut-bg" cx="60" cy="60" r="48"/>
+            <circle class="donut-fill" cx="60" cy="60" r="48"
+              stroke="url(#gradYedek)"
+              stroke-dasharray="{{ disk_yedek_pct * 3.016 }} 301.6"
+              transform="rotate(-90 60 60)"/>
+          </svg>
+          <div class="donut-center">
+            <strong>{{ disk_yedek }}</strong>
+            <span>/yedek</span>
+          </div>
+          </div>
+        </div>
+      </div>
+      <div class="legend-row">
+        <span><i class="dot teal"></i> Kullanilan</span>
+        <span><i class="dot dim"></i> Bos: {{ disk_root_free }}% / {{ disk_yedek_free }}%</span>
+      </div>
+    </article>
+
+    <article class="panel-3d info-panel embossed reveal reveal-d3">
+      <h2 class="panel-title"><span class="title-accent"></span>{% if instance_count > 1 %}{{ active_instance.display_name }} — {% endif %}Kurum Karti</h2>
+      <div class="info-stack">
+        <div class="info-chip"><span>Oracle</span><strong class="oracle-inline-status {% if active_instance.oracle_running %}open{% else %}closed{% endif %}">{{ active_instance.oracle_status_label }}</strong></div>
+        <div class="info-chip"><span>Data Boyutu</span><strong>{% if active_instance.oracle_stats_ok %}{{ active_instance.data_size_label }}{% else %}{{ active_instance.oracle_stats_message }}{% endif %}</strong></div>
+        <div class="info-chip"><span>SGA</span><strong>{% if active_instance.oracle_stats_ok %}{{ active_instance.sga_label }}{% else %}—{% endif %}</strong></div>
+        <div class="info-chip"><span>PGA</span><strong>{% if active_instance.oracle_stats_ok %}{{ active_instance.pga_label }}{% else %}—{% endif %}</strong></div>
+        <div class="info-chip"><span>Instance</span><strong>{{ active_instance.id }}</strong></div>
+        <div class="info-chip"><span>Oracle SID</span><strong>{{ active_instance.oracle_sid }}</strong></div>
+        <div class="info-chip"><span>Schema</span><strong>{{ active_instance.schemas }}</strong></div>
+        <div class="info-chip"><span>Kurum Kodu</span><strong>{{ active_instance.kurumkodu or '—' }}</strong></div>
+        <div class="info-chip"><span>Yedek Kodu</span><strong>{{ active_instance.yedek_kodu }}</strong></div>
+        <div class="info-chip"><span>Yedek Dizini</span><strong>{{ settings.yedek_dir }}/</strong></div>
+      </div>
+      {% if last_backup %}
+      <div class="last-backup-badge">
+        <p>Son yedek</p>
+        <strong>{{ last_backup.name }}</strong>
+        <span>{{ last_backup.mtime }} · {{ last_backup.size_mb }} MB</span>
+      </div>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="panel-3d backup-panel reveal reveal-d4">
+    <div class="panel-head">
+      <h2 class="panel-title"><span class="title-accent"></span>{% if instance_count > 1 %}{{ active_instance.display_name }} — {% endif %}Yedek Hacim Grafigi</h2>
+      <span class="panel-meta">Son {{ backups|length }} kayit</span>
+    </div>
+
+    {% if backups %}
+    <div class="bar-chart-3d">
+      {% for item in backups %}
+      <div class="bar-col" title="{{ item.name }} — {{ item.size_mb }} MB">
+        <div class="bar-3d" style="--h: {{ item.bar_pct }}%">
+          <div class="bar-face front"></div>
+          <div class="bar-face top"></div>
+          <div class="bar-face side"></div>
+        </div>
+        <span class="bar-label">{{ item.mtime_short }}</span>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="backup-table-wrap">
+      <table class="backup-table">
+        <thead>
+          <tr><th>Dosya</th><th>Boyut</th><th>Tarih</th></tr>
+        </thead>
+        <tbody>
+          {% for item in backups %}
+          <tr>
+            <td><code>{{ item.name }}</code></td>
+            <td>{{ item.size_mb }} MB</td>
+            <td>{{ item.mtime }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-icon" aria-hidden="true"></div>
+      <p>Henuz yedek dosyasi yok</p>
+      <a href="/yedekler{% if active_instance_id %}?instance={{ active_instance_id }}{% endif %}" class="btn-glow">Ilk Yedegi Baslat</a>
+    </div>
+    {% endif %}
+  </section>
+  </div>
+</div>
+
+{% if can_admin %}
+<dialog id="clock-edit-modal" class="schedule-modal clock-edit-modal">
+  <form method="post" action="/sistem/saat" class="schedule-modal-form clock-edit-form">
+    <input type="hidden" name="return_to" value="/">
+    <div class="schedule-modal-head">
+      <h3>Sunucu Saati Duzenle</h3>
+      <button type="button" class="btn-ghost btn-sm" id="clock-edit-cancel">Kapat</button>
+    </div>
+    <p class="form-hint">Host sunucusunun tarih, saat ve saat dilimini ayarlar. Liste sunucudan (<code>timedatectl list-timezones</code>) alinir.</p>
+    <div class="form-grid">
+      <label>Tarih
+        <input type="date" name="clock_date" id="clock-input-date" required>
+      </label>
+      <label>Saat
+        <input type="time" name="clock_time" id="clock-input-time" step="1" required>
+      </label>
+      <label class="full">Saat dilimi
+        <select name="server_timezone" id="clock-input-tz" required class="tz-select-full">
+          {% for tz in timezone_options %}
+          <option value="{{ tz }}" {% if server_info.timezone == tz %}selected{% endif %}>{{ tz }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="form-actions instance-form-actions">
+      <button type="submit" class="btn-glow btn-sm">Uygula</button>
+      <button type="button" class="btn-ghost btn-sm" id="clock-edit-cancel-2">Iptal</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+  const clockEl = document.getElementById('server-live-clock');
+  const dateEl = document.getElementById('server-live-date');
+  const weekdayEl = document.getElementById('server-live-weekday');
+  const tzLabelEl = document.getElementById('server-timezone-label');
+  const tzIanaEl = document.getElementById('server-timezone-iana');
+  const tzOffsetEl = document.getElementById('server-timezone-offset');
+  const ntpEl = document.getElementById('server-ntp-status');
+  const editModal = document.getElementById('clock-edit-modal');
+  const editToggle = document.getElementById('clock-edit-toggle');
+  const editCancel = document.getElementById('clock-edit-cancel');
+  const editCancel2 = document.getElementById('clock-edit-cancel-2');
+  const dateInput = document.getElementById('clock-input-date');
+  const timeInput = document.getElementById('clock-input-time');
+  if (!clockEl) return;
+
+  let epoch = {{ server_info.clock_epoch or 0 }};
+  let tz = {{ (server_info.timezone if server_info.timezone and server_info.timezone != '—' else 'UTC')|tojson }};
+
+  function applyClockMeta(data) {
+    if (data.timezone) {
+      tz = data.timezone;
+      if (tzIanaEl) tzIanaEl.textContent = data.timezone;
+      const tzSelect = document.getElementById('clock-input-tz');
+      if (tzSelect) tzSelect.value = data.timezone;
+    }
+    if (tzLabelEl) {
+      tzLabelEl.textContent = data.timezone_label || data.timezone || '—';
+      if (data.timezone) tzLabelEl.title = data.timezone;
+    }
+    if (tzOffsetEl && data.utc_offset) {
+      tzOffsetEl.textContent = 'UTC' + data.utc_offset;
+      tzOffsetEl.hidden = false;
+    }
+    if (ntpEl && data.ntp_synchronized !== undefined && data.ntp_synchronized !== '') {
+      const on = ['yes', '1', 'true'].includes(String(data.ntp_synchronized).toLowerCase());
+      ntpEl.textContent = 'NTP: ' + (on ? 'aktif' : 'kapali');
+      ntpEl.hidden = false;
+    }
+  }
+
+  applyClockMeta({
+    timezone: tz,
+    timezone_label: {{ (server_info.timezone_label or server_info.timezone or '')|tojson }},
+    utc_offset: {{ (server_info.utc_offset or '')|tojson }},
+    ntp_synchronized: {{ (server_info.ntp_synchronized or '')|tojson }},
+  });
+
+  function formatParts(unixSec) {
+    const parts = new Intl.DateTimeFormat('tr-TR', {
+      timeZone: tz,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date(unixSec * 1000));
+    const get = (type) => (parts.find((p) => p.type === type) || {}).value || '';
+    return {
+      isoDate: `${get('year')}-${get('month')}-${get('day')}`,
+      date: `${get('day')}.${get('month')}.${get('year')}`,
+      time: `${get('hour')}:${get('minute')}:${get('second')}`,
+      weekday: new Intl.DateTimeFormat('tr-TR', { timeZone: tz, weekday: 'long' }).format(new Date(unixSec * 1000)),
+    };
+  }
+
+  function render() {
+    if (!epoch) return;
+    const p = formatParts(epoch);
+    clockEl.textContent = p.time;
+    if (dateEl) dateEl.textContent = p.date;
+    if (weekdayEl) weekdayEl.textContent = p.weekday;
+    if (dateInput && (!editModal || !editModal.open)) {
+      dateInput.value = p.isoDate;
+      if (timeInput) timeInput.value = p.time;
+    }
+  }
+
+  function openClockModal() {
+    if (!editModal) return;
+    render();
+    if (typeof editModal.showModal === 'function') editModal.showModal();
+  }
+
+  function closeClockModal() {
+    if (editModal && typeof editModal.close === 'function') editModal.close();
+  }
+
+  if (editToggle) {
+    editToggle.addEventListener('click', openClockModal);
+  }
+  if (editCancel) editCancel.addEventListener('click', closeClockModal);
+  if (editCancel2) editCancel2.addEventListener('click', closeClockModal);
+
+  setInterval(function () {
+    if (epoch && (!editModal || !editModal.open)) {
+      epoch += 1;
+      render();
+    }
+  }, 1000);
+
+  setInterval(async function () {
+    try {
+      const res = await fetch('/api/server/clock');
+      const data = await res.json();
+      if (data.ok && data.clock_epoch) {
+        epoch = data.clock_epoch;
+        applyClockMeta(data);
+        render();
+      }
+    } catch (err) {
+      /* sessiz */
+    }
+  }, 60000);
+
+  render();
+})();
+</script>
+{% endblock %}

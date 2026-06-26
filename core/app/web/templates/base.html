@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Yedek Panel{% endblock %}</title>
+  <script>window.__YEDEK_BASE__={{ (request.headers.get('x-yedek-central-proxy-prefix') or '')|tojson }};</script>
+  <link rel="stylesheet" href="{{ static_url('/static/style.css', request) }}">
+  {% if user %}<link rel="stylesheet" href="{{ static_url('/static/pages.css', request) }}">{% endif %}
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="{% if user %}app-dark {% endif %}{% block body_class %}{% endblock %}">
+  {% if user %}
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">Yedek Yonetim Paneli{% if role_label is defined %} <span class="role-badge">{{ role_label }}</span>{% endif %}</div>
+      <nav>
+        <a href="/" class="{% if request.url.path == '/' %}nav-active{% endif %}">Durum</a>
+        <a href="/yedekler" class="{% if request.url.path.startswith('/yedekler') %}nav-active{% endif %}">Yedekler</a>
+        {% if can_settings %}<a href="/rman" class="{% if request.url.path.startswith('/rman') %}nav-active{% endif %}">RMAN</a>{% endif %}
+        {% if can_settings %}<a href="/ayarlar" class="{% if request.url.path == '/ayarlar' %}nav-active{% endif %}">Ayarlar</a>{% endif %}
+        {% if can_settings %}<a href="/sistem" class="{% if request.url.path == '/sistem' %}nav-active{% endif %}">Sistem</a>{% endif %}
+        {% if can_settings %}<a href="/terminal" class="{% if request.url.path == '/terminal' %}nav-active{% endif %}">Terminal</a>{% endif %}
+        <a href="/logout" class="muted">Cikis</a>
+      </nav>
+    </div>
+  </header>
+  {% endif %}
+
+  <main class="container">
+    {% if message %}
+    <div class="alert success">{{ message }}</div>
+    {% endif %}
+    {% if error %}
+    <div class="alert error">{{ error }}</div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+
+  {% if user %}
+  <dialog id="log-viewer-modal" class="schedule-modal log-viewer-modal">
+    <div class="schedule-modal-form log-viewer-body">
+      <div class="schedule-modal-head">
+        <h3 id="log-viewer-title">Log</h3>
+        <button type="button" class="btn-ghost btn-sm" onclick="closeLogViewerModal()">Kapat</button>
+      </div>
+      <div class="log-viewer-status" id="log-viewer-status" hidden></div>
+      <pre class="log-viewer-pre" id="log-viewer-body"></pre>
+    </div>
+  </dialog>
+  <script src="{{ static_url('/static/log-viewer.js', request) }}" defer></script>
+  {% endif %}
+
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

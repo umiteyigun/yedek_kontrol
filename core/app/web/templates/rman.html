@@ -1,0 +1,335 @@
+{% extends "base.html" %}
+{% block title %}RMAN — Yedek Panel{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/dashboard.css">
+<link rel="stylesheet" href="/static/pages.css">
+{% endblock %}
+{% block body_class %}page-rman{% endblock %}
+{% block content %}
+<div class="dash-canvas">
+  <div class="dash-scene">
+    <div class="dash-ambient dash-ambient-a" aria-hidden="true"></div>
+    <div class="dash-ambient dash-ambient-b" aria-hidden="true"></div>
+
+    <header class="page-hero panel-3d reveal">
+      <div class="page-hero-text">
+        <p class="dash-eyebrow">Fiziksel Yedek Merkezi</p>
+        <h1>RMAN Yedekleri</h1>
+        <p class="dash-sub">
+          SID <strong>{{ active_instance.oracle_sid }}</strong> · {{ rman_backup_count }} kayit · {{ rman_total_mb }} MB
+        </p>
+      </div>
+      <div class="page-hero-actions">
+        <form method="post" action="/rman/baslat" class="inline-form rman-start-form" data-cold="{{ '1' if rman_needs_cold_backup else '0' }}" data-tip="RMAN_INCR">
+          <input type="hidden" name="tip" value="RMAN_INCR">
+          <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
+          <button type="submit" class="btn-glow" {% if rman_status.state == 'running' or not active_rman.rman_enabled %}disabled{% endif %}>Gunluk Fark</button>
+        </form>
+        <form method="post" action="/rman/baslat" class="inline-form rman-start-form" data-cold="{{ '1' if rman_needs_cold_backup else '0' }}" data-tip="RMAN_FULL_MANUAL">
+          <input type="hidden" name="tip" value="RMAN_FULL_MANUAL">
+          <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
+          <button type="submit" class="btn-ghost" {% if rman_status.state == 'running' or not active_rman.rman_enabled %}disabled{% endif %}>Manuel Full</button>
+        </form>
+        <a href="/yedekler?instance={{ active_instance_id }}" class="btn-ghost btn-sm">Expdp Yedekler</a>
+      </div>
+    </header>
+
+    {% if instances|length > 1 %}
+    <nav class="instance-tabs reveal reveal-d1">
+      {% for inst in instances %}
+      <a href="/rman?instance={{ inst.id }}" class="instance-tab {% if inst.id == active_instance_id %}active{% endif %}">
+        {{ inst.display_name }} <span>{{ inst.oracle_sid }}</span>
+      </a>
+      {% endfor %}
+    </nav>
+    {% endif %}
+
+    <section class="mini-stat-row">
+      <article class="mini-stat panel-3d reveal reveal-d1">
+        <p class="label">RMAN Durumu</p>
+        <p class="value">{% if active_rman.rman_enabled %}Aktif{% else %}Kapali{% endif %}</p>
+        <p class="meta">{{ active_rman.effective_rman_dest }}/</p>
+      </article>
+      <article class="mini-stat panel-3d reveal reveal-d2">
+        <p class="label">ArchiveLog</p>
+        <p class="value">{{ active_rman.archivelog_label or 'Kapali' }}</p>
+        <p class="meta">{{ active_rman.log_mode or 'UNKNOWN' }}</p>
+      </article>
+      <article class="mini-stat panel-3d reveal reveal-d3">
+        <p class="label">Calisma</p>
+        <p class="value">
+          {% if rman_status.state == 'running' %}Calisiyor
+          {% elif rman_status.state == 'done' %}Tamamlandi
+          {% elif rman_status.state == 'failed' %}Basarisiz
+          {% else %}Beklemede{% endif %}
+        </p>
+        <p class="meta">{% if rman_status.tip %}{{ rman_status.tip }}{% else %}Hazir{% endif %}</p>
+      </article>
+    </section>
+
+    {% if rman_needs_cold_backup %}
+    <div class="status-banner warn panel-3d reveal reveal-d2 rman-cold-notice">
+      <strong>NOARCHIVELOG modu:</strong> Haftalik / Manuel <em>Full</em> yedeklerde veritabani
+      <strong>otomatik kapatilir</strong> (MOUNT), yedek biter bitmez <strong>tekrar acilir</strong>.
+      Bu surede HBYS erisilemez olabilir. Hata olursa panel scripti yine de DB’yi acmaya calisir.
+      Gunluk <em>Fark</em> yedek bu modda calismaz — once ArchiveLog acilmalidir.
+    </div>
+    {% endif %}
+
+    {% if rman_status.state == 'running' %}
+    <div class="status-banner running panel-3d reveal reveal-d2">
+      <span class="pulse" style="width:8px;height:8px;border-radius:50%;background:currentColor;display:inline-block;box-shadow:0 0 12px currentColor;"></span>
+      RMAN yedegi calisiyor{% if rman_status.instance_id %} ({{ rman_status.instance_id }}){% endif %} — {{ rman_status.tip }}
+      {% if rman_cold_active %}
+      · <strong>Veritabani su an kapali/MOUNT</strong> — islem bitince otomatik OPEN yapilir.
+      {% endif %}
+      · sayfayi yenileyin.
+    </div>
+    {% elif rman_status.state == 'done' %}
+    <div class="status-banner done panel-3d reveal reveal-d2">
+      Son RMAN yedegi tamamlandi: <strong>{{ rman_status.updated_at }}</strong>
+      {% if can_settings and rman_status.log_file %}
+      — <button type="button" class="btn-log-view btn-ghost btn-sm" data-log-source="panel" data-log-name="{{ rman_status.log_file }}">Panel logu</button>
+      {% endif %}
+    </div>
+    {% elif rman_status.state == 'failed' %}
+    <div class="status-banner failed panel-3d reveal reveal-d2">
+      RMAN yedegi basarisiz (exit {{ rman_status.exit_code }}).
+      {% if can_settings and rman_status.log_file %}
+      <button type="button" class="btn-log-view" data-log-source="panel" data-log-name="{{ rman_status.log_file }}">Logu ac</button>
+      {% endif %}
+    </div>
+    {% elif rman_status.state == 'skipped' %}
+    <div class="status-banner failed panel-3d reveal reveal-d2">
+      RMAN atlandi: {{ rman_status.reason or 'disk kontrolu' }}
+    </div>
+    {% endif %}
+
+    {% if can_settings %}
+    <section class="panel-3d reveal reveal-d2 rman-settings-section">
+      <h2 class="section-title">RMAN Ayarlari</h2>
+      <form method="post" action="/rman/kaydet" class="rman-settings-form">
+        <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
+        <div class="form-grid">
+          <label class="checkbox-row full">
+            <input type="checkbox" name="rman_enabled" value="1" {% if active_rman.rman_enabled %}checked{% endif %}>
+            RMAN yedekleri aktif
+          </label>
+          <label class="full">
+            RMAN Dizini (kok)
+            <input type="text" name="rman_dest" value="{{ active_rman.rman_dest }}" placeholder="/yedek/rman">
+          </label>
+          <p class="form-hint full">Instance yolu: <strong>{{ active_rman.effective_rman_dest }}/</strong> — alt klasorler: <code>full/</code>, <code>fark/</code>, <code>full/manuel/</code></p>
+          <label>
+            Saklama (gun)
+            <input type="number" min="1" max="365" name="rman_retention_days" value="{{ active_rman.rman_retention_days }}">
+          </label>
+          <label>
+            Kanal sayisi
+            <input type="number" min="1" max="4" name="rman_channels" value="{{ active_rman.rman_channels }}">
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" name="rman_compression" value="1" {% if active_rman.rman_compression %}checked{% endif %}>
+            Sikistirma (COMPRESSED BACKUPSET)
+          </label>
+          <label class="checkbox-row {% if not active_rman.archivelog %}field-disabled{% endif %}">
+            <input type="checkbox" name="rman_archivelog_backup" value="1"
+              {% if active_rman.rman_archivelog_backup %}checked{% endif %}
+              {% if not active_rman.archivelog %}disabled{% endif %}>
+            ArchiveLog yedegi (DB ARCHIVELOG modunda olmali)
+          </label>
+          {% if not active_rman.archivelog %}
+          <p class="form-hint full">ArchiveLog su an kapali — acildiginda bu secenek aktif olur.</p>
+          {% endif %}
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn-glow btn-sm">RMAN Ayarlarini Kaydet</button>
+        </div>
+      </form>
+
+      <div class="rman-schedule-block">
+        <h3 class="subsection-title">Zamanlama</h3>
+        <p class="form-hint">Haftalik <strong>full</strong> ve gunluk <strong>fark</strong> ayri kurallarla tanimlanir. Manuel full zamanlamadan bagimsizdir.</p>
+        {% if rman_needs_cold_backup %}
+        <p class="form-hint rman-schedule-cold-hint">
+          <strong>Uyari:</strong> Zamanlanmis <em>Haftalik Full</em> kurallari NOARCHIVELOG modunda DB’yi otomatik kapatip acar (mesai disi saat onerilir).
+        </p>
+        {% endif %}
+        {% if active_rman.rman_schedules %}
+        <table class="backup-table rman-schedule-table">
+          <thead>
+            <tr>
+              <th>Tip</th>
+              <th>Plan</th>
+              <th>Etiket</th>
+              <th>Durum</th>
+              {% if can_settings %}<th></th>{% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for rule in active_rman.rman_schedules %}
+            <tr>
+              <td>{{ rule.backup_type_label }}</td>
+              <td>{{ rule.summary }}</td>
+              <td>{{ rule.label or '—' }}</td>
+              <td>{% if rule.enabled %}Aktif{% else %}Pasif{% endif %}</td>
+              {% if can_settings %}
+              <td>
+                <form method="post" action="/rman/zamanlama/sil" class="inline-form">
+                  <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
+                  <input type="hidden" name="rule_id" value="{{ rule.id }}">
+                  <button type="submit" class="btn-danger btn-sm">Sil</button>
+                </form>
+              </td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="form-hint">Henuz RMAN zamanlama yok.</p>
+        {% endif %}
+
+        <form method="post" action="/rman/zamanlama/ekle" class="rman-schedule-add-form">
+          <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
+          <p class="form-hint full rman-schedule-hint" id="rman-schedule-hint">
+            <strong>Haftalik Full:</strong> secilen gun + saatte level-0 yedek.
+            <strong>Gunluk Fark:</strong> her gun ayni saatte incremental (gun secimi yok).
+          </p>
+          <div class="form-grid">
+            <label>
+              Tip
+              <select name="backup_type" id="rman-schedule-type" onchange="toggleRmanWeeklyDay()">
+                <option value="RMAN_FULL">Haftalik Full</option>
+                <option value="RMAN_INCR">Gunluk Fark</option>
+              </select>
+            </label>
+            <label>
+              Saat
+              <input type="time" name="time" value="03:00" required>
+            </label>
+            <label id="rman-day-wrap" class="rman-day-field">
+              Haftanin Gunu
+              <select name="day_of_week" id="rman-day-select">
+                {% for day in weekday_labels %}
+                <option value="{{ loop.index0 }}" {% if loop.index0 == 6 %}selected{% endif %}>{{ day }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              Etiket
+              <input type="text" name="label" placeholder="Ornek: Pazar gece full">
+            </label>
+            <label class="checkbox-row">
+              <input type="checkbox" name="enabled" value="1" checked>
+              Aktif
+            </label>
+          </div>
+          <button type="submit" class="btn-ghost btn-sm">Zamanlama Ekle</button>
+        </form>
+      </div>
+    </section>
+    {% endif %}
+
+    <section class="panel-3d reveal reveal-d3">
+      <h2 class="section-title">Yedek Kayitlari</h2>
+      <p class="form-hint section-hint">Controlfile ve SPFILE her yedekte dahil edilir. Klasor yapisi: full / fark / full/manuel</p>
+      {% if rman_backups %}
+      <div class="backup-table-wrap">
+        <table class="backup-table rman-backup-table">
+          <thead>
+            <tr>
+              <th>Klasor</th>
+              <th>Tip</th>
+              <th>Tarih</th>
+              <th>Parca</th>
+              <th>Boyut</th>
+              <th>Islem</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rman_backups %}
+            <tr>
+              <td><code>{{ row.run_id }}</code></td>
+              <td><span class="rman-type-badge rman-type-{{ row.folder_type }}">{{ row.backup_type_label }}</span></td>
+              <td>{{ row.mtime }}</td>
+              <td>{{ row.piece_count }}</td>
+              <td>{{ row.size_mb }} MB</td>
+              <td class="row-actions">
+                {% if row.log_name and can_settings %}
+                <button type="button" class="btn-ghost btn-sm btn-log-view" data-log-source="rman" data-log-name="{{ row.run_id }}" data-log-instance="{{ active_instance_id }}">Log</button>
+                {% endif %}
+                {% if can_settings %}
+                <form method="post" action="/rman/sil" class="inline-form"
+                  onsubmit="return confirm('Bu RMAN yedek klasoru silinsin mi?');">
+                  <input type="hidden" name="run_id" value="{{ row.run_id }}">
+                  <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
+                  <button type="submit" class="btn-danger btn-sm">Sil</button>
+                </form>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="form-hint">Henuz RMAN yedegi yok. Ayarlardan RMAN'i aktif edip yedek alin.</p>
+      {% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  function confirmRmanStart(form) {
+    const tip = form.dataset.tip || '';
+    const cold = form.dataset.cold === '1';
+    if (tip === 'RMAN_INCR' && cold) {
+      alert('Gunluk Fark yedegi ARCHIVELOG modu gerektirir. Once veritabaninda ArchiveLog acin.');
+      return false;
+    }
+    if (cold && (tip === 'RMAN_FULL_MANUAL' || tip === 'RMAN_FULL')) {
+      return confirm(
+        'DIKKAT — NOARCHIVELOG full yedek\n\n' +
+        '• Veritabani otomatik SHUTDOWN + MOUNT yapilacak\n' +
+        '• HBYS bu surede kullanilamaz\n' +
+        '• Yedek bitince DB otomatik OPEN edilir\n' +
+        '• Hata olursa sistem yine de DB acmaya calisir\n\n' +
+        'Devam edilsin mi?'
+      );
+    }
+    return true;
+  }
+
+  document.querySelectorAll('.rman-start-form').forEach(function (form) {
+    form.addEventListener('submit', function (event) {
+      if (!confirmRmanStart(form)) {
+        event.preventDefault();
+      }
+    });
+  });
+
+  function toggleRmanWeeklyDay() {
+    const select = document.getElementById('rman-schedule-type');
+    const wrap = document.getElementById('rman-day-wrap');
+    const daySelect = document.getElementById('rman-day-select');
+    const hint = document.getElementById('rman-schedule-hint');
+    if (!select || !wrap) return;
+    const isIncr = select.value === 'RMAN_INCR';
+    wrap.classList.toggle('rman-day-hidden', isIncr);
+    wrap.hidden = isIncr;
+    if (daySelect) {
+      daySelect.disabled = isIncr;
+      daySelect.required = !isIncr;
+    }
+    if (hint) {
+      hint.innerHTML = isIncr
+        ? '<strong>Gunluk Fark:</strong> her gun belirtilen saatte calisir — haftanin gunu secilmez.'
+        : '<strong>Haftalik Full:</strong> yalnizca secilen gun + saatte level-0 yedek alinir.';
+    }
+  }
+  document.addEventListener('DOMContentLoaded', toggleRmanWeeklyDay);
+  toggleRmanWeeklyDay();
+</script>
+{% endblock %}

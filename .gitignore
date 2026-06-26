@@ -1,0 +1,22 @@
+# Ortam / gizli
+.env
+credentials/
+config/central-agent.dev.env
+config/sessions.json
+config/settings.json
+
+# Runtime uretilen
+config/generated/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

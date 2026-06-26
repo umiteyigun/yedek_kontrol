@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% block title %}Sistem Ayarlari — Yedek Panel{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/dashboard.css">
+<link rel="stylesheet" href="/static/pages.css">
+{% endblock %}
+{% block body_class %}page-settings page-system{% endblock %}
+{% block content %}
+<div class="dash-canvas">
+  <div class="dash-scene">
+    <div class="dash-ambient dash-ambient-a" aria-hidden="true"></div>
+    <div class="dash-ambient dash-ambient-b" aria-hidden="true"></div>
+
+    <header class="page-hero panel-3d reveal">
+      <div class="page-hero-text">
+        <p class="dash-eyebrow">Guvenlik ve Erisim</p>
+        <h1>Sistem Ayarlari</h1>
+        <p class="dash-sub">LDAP kimlik dogrulama ve yerel panel kullanicilari · {{ user }}</p>
+      </div>
+      <div class="page-hero-actions">
+        <a href="/" class="btn-ghost btn-sm">Duruma Don</a>
+      </div>
+    </header>
+
+    {% if message %}
+    <div class="status-banner running panel-3d reveal reveal-d1">{{ message }}</div>
+    {% endif %}
+    {% if error %}
+    <div class="status-banner failed panel-3d reveal reveal-d1">{{ error }}</div>
+    {% endif %}
+
+    <section class="form-section panel-3d settings-section-bottom reveal reveal-d1">
+      <legend class="section-legend">Sunucu Saati ve Saat Dilimi</legend>
+      <p class="form-hint section-hint">
+        Host sunucusunun guncel saati. Saat dilimi degisikligi yedek zamanlamalarina da yansir.
+      </p>
+      <div class="info-stack server-clock-info">
+        <div class="info-chip"><span>Tarih / Saat</span><strong>{{ host_clock.clock_datetime or '—' }}</strong></div>
+        <div class="info-chip"><span>Saat Dilimi</span><strong>{{ host_clock.timezone_label or host_clock.timezone or '—' }}</strong></div>
+        <div class="info-chip"><span>UTC Offset</span><strong>{% if host_clock.utc_offset %}UTC{{ host_clock.utc_offset }}{% else %}—{% endif %}</strong></div>
+      </div>
+      <form method="post" action="/sistem/saat" class="timezone-form">
+        <input type="hidden" name="return_to" value="/sistem">
+        <div class="form-grid">
+          <label>Tarih
+            <input type="date" name="clock_date" value="" id="sistem-clock-date" required>
+          </label>
+          <label>Saat
+            <input type="time" name="clock_time" value="" id="sistem-clock-time" step="1" required>
+          </label>
+          <label class="full">Saat dilimi (sunucudan {{ timezone_options|length }} bolge)
+            <select name="server_timezone" required class="tz-select-full">
+              {% for tz in timezone_options %}
+              <option value="{{ tz }}" {% if host_clock.timezone == tz %}selected{% endif %}>{{ tz }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <div class="form-actions instance-form-actions">
+          <button type="submit" class="btn-glow btn-sm">Host'a Uygula</button>
+        </div>
+      </form>
+    </section>
+
+    <form method="post" action="/sistem/kaydet" id="system-auth-form" class="reveal reveal-d1">
+      <fieldset class="form-section panel-3d settings-section-bottom">
+        <legend>Giris Modu</legend>
+        <p class="form-hint section-hint">
+          Panel girisinde hangi yontemlerin kullanilacagini secin.
+          <strong>Master</strong> kullanici (ortam degiskeni) her zaman gecerlidir.
+        </p>
+        <div class="form-grid">
+          <label class="full">Kimlik dogrulama
+            <select name="auth_mode">
+              {% for key, label in auth_mode_labels.items() %}
+              <option value="{{ key }}" {% if settings.auth_mode == key %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="form-section panel-3d settings-section-bottom" id="ldap-settings-block">
+        <legend>LDAP / FreeIPA</legend>
+        <p class="form-hint section-hint">
+          Varsayilan sunucu <strong>ad.trtekyazilim.com</strong>.
+          Tam yetki gruplari: <code>admins</code> · sinirli yetki: <code>yedek-data</code>
+        </p>
+        <div class="form-grid">
+          <label class="checkbox-row full">
+            <input type="checkbox" name="ldap_enabled" value="1" {% if settings.ldap_enabled %}checked{% endif %}>
+            LDAP aktif
+          </label>
+          <label>Sunucu
+            <input type="text" name="ldap_host" value="{{ settings.ldap_host }}" placeholder="{{ ldap_defaults.ldap_host }}">
+          </label>
+          <label>Port
+            <input type="number" name="ldap_port" min="1" max="65535" value="{{ settings.ldap_port }}">
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" name="ldap_use_ssl" value="1" {% if settings.ldap_use_ssl %}checked{% endif %}>
+            SSL (LDAPS)
+          </label>
+          <label class="full">Base DN
+            <input type="text" name="ldap_base_dn" value="{{ settings.ldap_base_dn }}" placeholder="{{ ldap_defaults.ldap_base_dn }}">
+          </label>
+          <label class="full">Kullanici DN sablonu
+            <input type="text" name="ldap_user_dn_template" value="{{ settings.ldap_user_dn_template }}" placeholder="{{ ldap_defaults.ldap_user_dn_template }}">
+          </label>
+          <label class="full">Grup arama tabani
+            <input type="text" name="ldap_group_base" value="{{ settings.ldap_group_base }}" placeholder="{{ ldap_defaults.ldap_group_base }}">
+          </label>
+          <label>Tam yetki gruplari (virgul)
+            <input type="text" name="ldap_groups_full" value="{{ settings.ldap_groups_full }}" placeholder="{{ ldap_defaults.ldap_groups_full }}">
+          </label>
+          <label>Sinirli yetki gruplari (virgul)
+            <input type="text" name="ldap_groups_limited" value="{{ settings.ldap_groups_limited }}" placeholder="{{ ldap_defaults.ldap_groups_limited }}">
+          </label>
+          <label class="full">Arama filtresi
+            <input type="text" name="ldap_search_filter" value="{{ settings.ldap_search_filter }}" placeholder="{{ ldap_defaults.ldap_search_filter }}">
+          </label>
+          <label>Bind DN (opsiyonel)
+            <input type="text" name="ldap_bind_dn" value="{{ settings.ldap_bind_dn }}">
+          </label>
+          <label>Bind sifresi (opsiyonel)
+            <input type="password" name="ldap_bind_password" value="" placeholder="{% if ldap_has_bind_password %}Kayitli — degistirmek icin yazin{% else %}Bos birakilabilir{% endif %}" autocomplete="new-password">
+          </label>
+        </div>
+        <div class="form-actions instance-form-actions">
+          <button type="button" class="btn-ghost btn-sm" id="ldap-test-btn">Baglanti Testi</button>
+          <span class="form-hint" id="ldap-test-result"></span>
+        </div>
+      </fieldset>
+
+      <div class="form-actions instance-form-actions">
+        <button type="submit" class="btn-glow btn-sm">Kimlik Ayarlarini Kaydet</button>
+      </div>
+    </form>
+
+    <section class="form-section panel-3d settings-section-bottom reveal reveal-d2" id="local-users-block">
+      <legend class="section-legend">Yerel Kullanicilar</legend>
+      <p class="form-hint section-hint">
+        LDAP disinda panel icin kullanici tanimlayin. Sadece <strong>Yalnizca yerel</strong> veya
+        <strong>LDAP + yerel</strong> modunda giris yapilir.
+      </p>
+
+      <form method="post" action="/sistem/yerel/ekle" class="local-user-add-form">
+        <div class="form-grid">
+          <label>Kullanici adi
+            <input type="text" name="username" required pattern="[a-zA-Z0-9._-]{3,32}" autocomplete="off" placeholder="ornek: yedek.op">
+          </label>
+          <label>Sifre
+            <input type="password" name="password" required minlength="6" autocomplete="new-password">
+          </label>
+          <label>Rol
+            <select name="role">
+              <option value="limited">Sinirli (yedek operatoru)</option>
+              <option value="full">Tam yetki (admins)</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-actions instance-form-actions">
+          <button type="submit" class="btn-glow btn-sm">Kullanici Ekle</button>
+        </div>
+      </form>
+
+      {% if local_users %}
+      <div class="table-wrap local-users-table">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Kullanici</th>
+              <th>Rol</th>
+              <th>Durum</th>
+              <th>Olusturma</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in local_users %}
+            <tr>
+              <td><code>{{ row.username }}</code></td>
+              <td>{% if row.role == 'full' %}Tam yetki{% else %}Sinirli{% endif %}</td>
+              <td>{% if row.enabled %}<span class="status-pill ok"><span class="pulse"></span>Aktif</span>{% else %}Pasif{% endif %}</td>
+              <td class="muted">{{ row.created_at[:19] if row.created_at else '—' }}</td>
+              <td class="row-actions">
+                <details class="inline-details">
+                  <summary class="btn-ghost btn-sm">Duzenle</summary>
+                  <form method="post" action="/sistem/yerel/{{ row.username }}/guncelle" class="local-user-edit-form">
+                    <label>Rol
+                      <select name="role">
+                        <option value="limited" {% if row.role != 'full' %}selected{% endif %}>Sinirli</option>
+                        <option value="full" {% if row.role == 'full' %}selected{% endif %}>Tam yetki</option>
+                      </select>
+                    </label>
+                    <label class="checkbox-row">
+                      <input type="checkbox" name="enabled" value="1" {% if row.enabled %}checked{% endif %}>
+                      Aktif
+                    </label>
+                    <label>Yeni sifre (bos = degismez)
+                      <input type="password" name="password" autocomplete="new-password">
+                    </label>
+                    <button type="submit" class="btn-ghost btn-sm">Kaydet</button>
+                  </form>
+                </details>
+                <form method="post" action="/sistem/yerel/{{ row.username }}/sil" class="inline-form" onsubmit="return confirm('{{ row.username }} silinsin mi?');">
+                  <button type="submit" class="btn-danger btn-sm">Sil</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="form-hint muted">Henuz yerel kullanici yok.</p>
+      {% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+  const form = document.getElementById('system-auth-form');
+  const testBtn = document.getElementById('ldap-test-btn');
+  const testResult = document.getElementById('ldap-test-result');
+  const authMode = form && form.querySelector('[name="auth_mode"]');
+  const ldapBlock = document.getElementById('ldap-settings-block');
+  const localBlock = document.getElementById('local-users-block');
+
+  function syncVisibility() {
+    const mode = authMode ? authMode.value : 'ldap_and_local';
+    if (ldapBlock) ldapBlock.style.display = mode === 'local' ? 'none' : '';
+    if (localBlock) localBlock.style.display = mode === 'ldap' ? 'none' : '';
+  }
+
+  if (authMode) {
+    authMode.addEventListener('change', syncVisibility);
+    syncVisibility();
+  }
+
+  const dateField = document.getElementById('sistem-clock-date');
+  const timeField = document.getElementById('sistem-clock-time');
+  const hostDate = {{ host_clock.clock_date|tojson }};
+  const hostTime = {{ host_clock.clock_time|tojson }};
+  if (dateField && hostDate && hostDate.includes('.')) {
+    const parts = hostDate.split('.');
+    if (parts.length === 3) dateField.value = parts[2] + '-' + parts[1] + '-' + parts[0];
+  }
+  if (timeField && hostTime) timeField.value = hostTime;
+
+  if (testBtn && form) {
+    testBtn.addEventListener('click', async function () {
+      testResult.textContent = 'Test ediliyor...';
+      const data = new FormData(form);
+      try {
+        const res = await fetch('/sistem/ldap/test', { method: 'POST', body: data });
+        const json = await res.json();
+        testResult.textContent = json.message || (json.ok ? 'OK' : 'Hata');
+        testResult.className = 'form-hint ' + (json.ok ? 'ok' : 'error');
+      } catch (err) {
+        testResult.textContent = 'Test basarisiz: ' + err;
+        testResult.className = 'form-hint error';
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

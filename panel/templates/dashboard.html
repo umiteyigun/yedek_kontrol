@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Durum - Yedek Panel{% endblock %}
+{% block content %}
+<section class="grid-2">
+  <div class="card">
+    <h2>Kurum Ozeti</h2>
+    <dl class="kv">
+      <dt>Hastane</dt><dd>{{ settings.hastane }}</dd>
+      <dt>Il</dt><dd>{{ settings.il }}</dd>
+      <dt>Schema</dt><dd>{{ settings.schemas }}</dd>
+      <dt>Kurum Kodu</dt><dd>{{ settings.kurumkodu }}</dd>
+      <dt>Yedek Kodu</dt><dd>{{ settings.yedek_kodu }}</dd>
+    </dl>
+  </div>
+  <div class="card">
+    <h2>Sistem Durumu</h2>
+    <dl class="kv">
+      <dt>Disk /</dt><dd>{{ disk_root }}</dd>
+      <dt>Disk /yedek</dt><dd>{{ disk_yedek }}</dd>
+      <dt>Saklama Suresi</dt><dd>{{ settings.retention_days }} gun</dd>
+      <dt>FTP Adresi</dt><dd>{{ settings.localftpip }}</dd>
+    </dl>
+    <a href="/ayarlar" class="btn primary">Ayarlari Duzenle</a>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Son Yedekler</h2>
+  {% if backups %}
+  <table>
+    <thead>
+      <tr>
+        <th>Dosya</th>
+        <th>Boyut (MB)</th>
+        <th>Tarih</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in backups %}
+      <tr>
+        <td>{{ item.name }}</td>
+        <td>{{ item.size_mb }}</td>
+        <td>{{ item.mtime }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">Henuz yedek dosyasi bulunamadi.</p>
+  {% endif %}
+</section>
+{% endblock %}

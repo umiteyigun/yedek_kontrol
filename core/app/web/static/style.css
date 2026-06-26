@@ -1,0 +1,146 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* === App shell (login ile uyumlu koyu tema) === */
+:root {
+  --bg-deep: #040d12;
+  --bg-elevated: rgba(10, 26, 32, 0.85);
+  --stroke: rgba(120, 220, 200, 0.14);
+  --text: #e8f4f1;
+  --muted: #7fa39a;
+  --accent: #2ee8c0;
+  --accent-blue: #6ec8ff;
+  --danger: #ff7b7b;
+  --warn: #ffc857;
+  --card: rgba(12, 30, 36, 0.75);
+  --border: rgba(120, 220, 200, 0.12);
+  --primary: var(--accent);
+  --primary-dark: #1a9e84;
+}
+
+body.app-dark {
+  font-family: 'Outfit', system-ui, sans-serif;
+  background: var(--bg-deep);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+body.app-dark::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(46, 232, 192, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(46, 232, 192, 0.025) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+body.app-dark .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(4, 13, 18, 0.88);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--stroke);
+  padding: 0.85rem 0;
+}
+
+.topbar-inner {
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+body.app-dark .topbar nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+body.app-dark .topbar a.nav-active {
+  background: rgba(46, 232, 192, 0.14);
+  color: var(--accent);
+  box-shadow: 0 0 20px rgba(46, 232, 192, 0.08);
+}
+
+body.app-dark .topbar a {
+  color: #a8e8d8;
+  font-weight: 500;
+  font-size: 0.9rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 8px;
+  transition: background 0.2s, color 0.2s;
+}
+body.app-dark .topbar a:hover {
+  background: rgba(46, 232, 192, 0.1);
+  color: var(--accent);
+}
+body.app-dark .brand { font-weight: 600; letter-spacing: -0.02em; }
+body.app-dark .role-badge {
+  background: rgba(46, 232, 192, 0.15);
+  color: var(--accent);
+  border: 1px solid var(--stroke);
+}
+
+body.app-dark .container {
+  max-width: 1140px;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 1.75rem 1.5rem 3rem;
+  position: relative;
+  z-index: 1;
+}
+
+body.dashboard-page .container {
+  padding-top: 2rem;
+}
+
+body.app-dark .alert.success {
+  background: rgba(46, 232, 192, 0.1);
+  border-color: rgba(46, 232, 192, 0.3);
+  color: var(--accent);
+}
+body.app-dark .alert.error {
+  background: rgba(255, 100, 100, 0.1);
+  border-color: rgba(255, 120, 120, 0.35);
+  color: var(--danger);
+}
+
+/* diger sayfalar icin kartlar */
+body.app-dark .card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+}
+body.app-dark .subtitle, body.app-dark .muted { color: var(--muted); }
+body.app-dark .kv dt { color: var(--muted); }
+body.app-dark th { color: var(--muted); }
+body.app-dark td, body.app-dark th { border-color: var(--border); }
+body.app-dark input, body.app-dark fieldset {
+  background: rgba(255,255,255,0.04);
+  border-color: var(--border);
+  color: var(--text);
+}
+body.app-dark .btn {
+  background: rgba(255,255,255,0.05);
+  border-color: var(--border);
+  color: var(--text);
+}
+body.app-dark .btn.primary {
+  background: linear-gradient(135deg, var(--accent), var(--primary-dark));
+  border: none;
+  color: #041210;
+  font-weight: 600;
+}
+body.app-dark code {
+  background: rgba(46, 232, 192, 0.08);
+  color: var(--accent);
+}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Log — {{ name }}{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/dashboard.css">
+<link rel="stylesheet" href="/static/pages.css">
+{% endblock %}
+{% block body_class %}page-log{% endblock %}
+{% block content %}
+<div class="dash-canvas">
+  <div class="dash-scene">
+    <div class="dash-ambient dash-ambient-a" aria-hidden="true"></div>
+    <div class="dash-ambient dash-ambient-b" aria-hidden="true"></div>
+
+    <header class="page-hero panel-3d reveal">
+      <div class="page-hero-text">
+        <p class="dash-eyebrow">Calistirma Kaydi</p>
+        <h1>Yedek Logu</h1>
+        <p class="dash-sub">Detayli yedek cikti kaydi</p>
+      </div>
+      <div class="page-hero-actions">
+        <a href="{{ log_back_url or '/yedekler' }}" class="btn-ghost">Geri Don</a>
+      </div>
+    </header>
+
+    <section class="log-panel panel-3d reveal reveal-d2">
+      <div class="log-meta">
+        <code>{{ name }}</code>
+      </div>
+      <pre class="log-viewer">{{ content }}</pre>
+    </section>
+  </div>
+</div>
+{% endblock %}
