@@ -8,7 +8,7 @@ DIR_NAME="${3:-TRTEK}"
 
 ORACLE_HOME="${ORACLE_HOME:-}"
 if [[ -z "$ORACLE_HOME" && -d /u01/app/oracle/product ]]; then
-  ORACLE_HOME="$(ls -d /u01/app/oracle/product/*/db_1 2>/dev/null | head -1)"
+  ORACLE_HOME="$(ls -d /u01/app/oracle/product/*/db 2>/dev/null || ls -d /u01/app/oracle/product/*/db_1 2>/dev/null | head -1)"
 fi
 
 if [[ -z "$ORACLE_HOME" || ! -x "${ORACLE_HOME}/bin/sqlplus" ]]; then

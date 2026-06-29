@@ -188,7 +188,7 @@ run_rman_instance() {
 
   ORACLE_HOME="${ORACLE_HOME:-}"
   if [[ -z "$ORACLE_HOME" && -d /u01/app/oracle/product ]]; then
-    ORACLE_HOME="$(ls -d /u01/app/oracle/product/*/db_1 2>/dev/null | head -1)"
+    ORACLE_HOME="$(ls -d /u01/app/oracle/product/*/db 2>/dev/null || ls -d /u01/app/oracle/product/*/db_1 2>/dev/null | head -1)"
   fi
   [[ -x "${ORACLE_HOME}/bin/rman" ]] || die "rman bulunamadi: ${ORACLE_HOME}/bin/rman"
 
