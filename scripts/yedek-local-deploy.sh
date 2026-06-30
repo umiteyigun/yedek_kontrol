@@ -73,8 +73,8 @@ for rel in "${PRESERVE[@]}"; do
   cp -a "$STAGING/preserve/$rel" "$ROOT/$rel"
 done
 
-install -m 755 "$ROOT/scripts/yedek.sh" /usr/bin/yedek.sh
-ln -sfn /usr/bin/yedek.sh /usr/bin/yedek2.sh
+install -m 755 "$ROOT/scripts/install-host-scripts.sh" /yedek/config/install-host-scripts.sh
+bash /yedek/config/install-host-scripts.sh
 
 CHANGED="$(git diff --name-only "$OLD_SHA" HEAD 2>/dev/null || true)"
 needs_core=0
