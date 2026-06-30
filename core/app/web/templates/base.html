@@ -15,13 +15,13 @@
     <div class="topbar-inner">
       <div class="brand">Yedek Yonetim Paneli{% if role_label is defined %} <span class="role-badge">{{ role_label }}</span>{% endif %}</div>
       <nav>
-        <a href="/" class="{% if request.url.path == '/' %}nav-active{% endif %}">Durum</a>
-        <a href="/yedekler" class="{% if request.url.path.startswith('/yedekler') %}nav-active{% endif %}">Yedekler</a>
-        {% if can_settings %}<a href="/rman" class="{% if request.url.path.startswith('/rman') %}nav-active{% endif %}">RMAN</a>{% endif %}
-        {% if can_settings %}<a href="/ayarlar" class="{% if request.url.path == '/ayarlar' %}nav-active{% endif %}">Ayarlar</a>{% endif %}
-        {% if can_settings %}<a href="/sistem" class="{% if request.url.path == '/sistem' %}nav-active{% endif %}">Sistem</a>{% endif %}
-        {% if can_settings %}<a href="/terminal" class="{% if request.url.path == '/terminal' %}nav-active{% endif %}">Terminal</a>{% endif %}
-        <a href="/logout" class="muted">Cikis</a>
+        <a href="{{ panel_url('/', request) }}" class="{% if request.url.path == '/' %}nav-active{% endif %}">Durum</a>
+        <a href="{{ panel_url('/yedekler', request) }}" class="{% if request.url.path.startswith('/yedekler') %}nav-active{% endif %}">Yedekler</a>
+        {% if can_settings %}<a href="{{ panel_url('/rman', request) }}" class="{% if request.url.path.startswith('/rman') %}nav-active{% endif %}">RMAN</a>{% endif %}
+        {% if can_settings %}<a href="{{ panel_url('/ayarlar', request) }}" class="{% if request.url.path == '/ayarlar' %}nav-active{% endif %}">Ayarlar</a>{% endif %}
+        {% if can_settings %}<a href="{{ panel_url('/sistem', request) }}" class="{% if request.url.path == '/sistem' %}nav-active{% endif %}">Sistem</a>{% endif %}
+        {% if can_settings %}<a href="{{ panel_url('/terminal', request) }}" class="{% if request.url.path == '/terminal' %}nav-active{% endif %}">Terminal</a>{% endif %}
+        <a href="{{ panel_url('/logout', request) }}" class="muted">Cikis</a>
       </nav>
     </div>
   </header>
