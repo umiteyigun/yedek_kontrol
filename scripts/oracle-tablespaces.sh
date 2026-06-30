@@ -27,6 +27,8 @@ run_sqlplus() {
     echo "whenever sqlerror exit sql.sqlcode"
     echo "conn / as sysdba"
     echo "set heading off feedback off pagesize 0 linesize 4000 trimspool on verify off tab off"
+    echo "set numwidth 20"
+    echo "alter session set nls_numeric_characters='.,';"
     echo "set colsep '|'"
     echo "$sql"
     echo "exit;"
@@ -121,8 +123,14 @@ fi
 
 TMP_ROWS="$(mktemp)"
 printf '%s\n' "${ROWS[@]:-}" >"$TMP_ROWS"
-export MODE SID TS_NAME ERROR
-ROWS_FILE="$TMP_ROWS" python3 - <<'PY'
+export MODE SID TS_NAME ERROR ROWS_FILE="$TMP_ROWS"
+PYBIN="$(command -v python3 2>/dev/null || command -v python 2>/dev/null)"
+if [[ -z "$PYBIN" ]]; then
+  printf '%s\n' '{"ok":false,"error":"python bulunamadi"}'
+  rm -f "$TMP_ROWS"
+  exit 0
+fi
+"$PYBIN" - <<'PY'
 import json, os
 
 mode = os.environ["MODE"]
