@@ -58,7 +58,7 @@ def tablespace_page(request: Request):
             "active_instance_id": inst.id if inst else "",
             "oracle_sid": inst.oracle_sid if inst else "",
             "error": error or ctx.get("error", ""),
-            "view_mode": "datafiles" if selected and datafiles else "overview",
+            "view_mode": "datafiles" if selected else "overview",
         }
     )
     return templates.TemplateResponse("tablespaces.html", ctx)

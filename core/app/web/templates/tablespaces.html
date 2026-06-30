@@ -129,7 +129,7 @@
         <div id="ts-datafiles" class="ts-panel {% if view_mode == 'datafiles' %}active{% endif %}">
           <div class="panel-head">
             <h2 class="panel-title"><span class="title-accent"></span>Datafiles — <span id="ts-df-title">{{ selected_tablespace or '—' }}</span></h2>
-            <span class="panel-meta" id="ts-df-count">{{ datafiles|length }} dosya (.dbf)</span>
+            <span class="panel-meta" id="ts-df-count">{% if view_mode == 'datafiles' and datafiles %}{{ datafiles|length }} datafile{% else %}—{% endif %}</span>
           </div>
           <div class="ts-table-wrap" id="ts-df-wrap">
             <table class="ts-table">
@@ -150,6 +150,7 @@
                 </tr>
               </thead>
               <tbody id="ts-df-body">
+                {% if view_mode == 'datafiles' and datafiles %}
                 {% for df in datafiles %}
                 <tr>
                   <td class="ts-file-name" title="{{ df.file_name }}">{{ df.file_name }}</td>
@@ -171,6 +172,9 @@
                   <td>{{ '%.2f'|format(df.fragmentation_index) }}</td>
                 </tr>
                 {% endfor %}
+                {% else %}
+                <tr class="ts-df-placeholder-row"><td colspan="12" class="ts-empty">Sol listeden tablespace secin.</td></tr>
+                {% endif %}
               </tbody>
             </table>
           </div>
@@ -233,7 +237,7 @@
 
   function renderRows(rows) {
     if (!rows.length) {
-      dfBody.innerHTML = '<tr><td colspan="12" class="ts-empty">Datafile bulunamadi (.dbf)</td></tr>';
+      dfBody.innerHTML = '<tr><td colspan="12" class="ts-empty">Bu tablespace icin datafile bulunamadi</td></tr>';
       dfCount.textContent = '0 dosya';
       return;
     }
@@ -252,25 +256,37 @@
         <td>${esc(df.status)}</td>
         <td>${df.fragmentation_index.toFixed(2)}</td>
       </tr>`).join('');
-    dfCount.textContent = rows.length + ' dosya (.dbf)';
+    dfCount.textContent = rows.length + ' datafile';
   }
 
+  let loadingTs = '';
+
   async function loadDatafiles(name) {
+    if (!name) return;
+    loadingTs = name;
     dfHint.textContent = 'Yukleniyor...';
+    dfBody.innerHTML = '<tr><td colspan="12" class="ts-empty">Yukleniyor...</td></tr>';
     showDatafiles();
     setActive(name);
     dfTitle.textContent = name;
     const url = base + '/api/tablespaces/' + encodeURIComponent(name) + '/datafiles' + qsInstance();
     try {
-      const res = await fetch(url, { credentials: 'same-origin' });
+      const res = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      if (!res.ok) {
+        dfBody.innerHTML = '<tr><td colspan="12" class="ts-empty">HTTP ' + esc(String(res.status)) + '</td></tr>';
+        dfHint.textContent = '';
+        return;
+      }
       const data = await res.json();
+      if (loadingTs !== name) return;
       if (!data.ok) {
         dfBody.innerHTML = '<tr><td colspan="12" class="ts-empty">' + esc(data.error || 'Hata') + '</td></tr>';
+        dfCount.textContent = '0 dosya';
         dfHint.textContent = '';
         return;
       }
       renderRows(data.datafiles || []);
-      dfHint.textContent = '';
+      dfHint.textContent = data.datafiles && data.datafiles.length ? '' : 'Datafile yok';
       const u = new URL(window.location.href);
       u.searchParams.set('ts', name);
       const inst = currentInstance();
@@ -289,8 +305,11 @@
     history.replaceState({}, '', u.pathname + u.search);
   });
 
-  document.querySelectorAll('.ts-sidebar-item').forEach((btn) => {
-    btn.addEventListener('click', () => loadDatafiles(btn.dataset.ts));
+  document.getElementById('ts-sidebar')?.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.ts-sidebar-item');
+    if (!btn || !btn.dataset.ts) return;
+    ev.preventDefault();
+    loadDatafiles(btn.dataset.ts);
   });
 
   document.querySelectorAll('.ts-row-click').forEach((row) => {
@@ -300,6 +319,10 @@
 
   {% if selected_tablespace and view_mode == 'datafiles' %}
   setActive({{ selected_tablespace|tojson }});
+  showDatafiles();
+  {% if datafiles|length == 0 %}
+  loadDatafiles({{ selected_tablespace|tojson }});
+  {% endif %}
   {% endif %}
 })();
 </script>

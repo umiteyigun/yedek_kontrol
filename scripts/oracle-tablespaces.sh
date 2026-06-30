@@ -93,7 +93,6 @@ LEFT JOIN (
   SELECT file_id, SUM(bytes) free_bytes FROM dba_free_space GROUP BY file_id
 ) fs ON df.file_id = fs.file_id
 WHERE df.tablespace_name = UPPER('${TS_NAME}')
-  AND (LOWER(df.file_name) LIKE '%.dbf' OR REGEXP_LIKE(df.file_name, '[0-9]{1,4}$'))
 ORDER BY df.file_id;
 "
 
