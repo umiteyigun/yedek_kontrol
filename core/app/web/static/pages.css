@@ -1665,3 +1665,200 @@ button.instance-tab {
   .content-panel, .form-section, .log-panel { padding: 1.2rem; }
   .panel-head-row { flex-direction: column; align-items: stretch; text-align: center; }
 }
+
+/* === Tablespace kontrol === */
+body.page-tablespace .container { padding-top: 2rem; }
+
+.ts-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 0;
+  min-height: 520px;
+  overflow: hidden;
+}
+
+.ts-sidebar {
+  border-right: 1px solid var(--border);
+  background: rgba(8, 14, 24, 0.55);
+  display: flex;
+  flex-direction: column;
+}
+
+.ts-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.ts-sidebar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem 0;
+  overflow-y: auto;
+  max-height: calc(100vh - 280px);
+}
+
+.ts-sidebar-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 1rem;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition: background 0.15s;
+}
+
+.ts-sidebar-item:hover,
+.ts-sidebar-item.active {
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.ts-sidebar-item.active .ts-side-name { color: var(--accent); }
+
+.ts-side-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ts-side-pct {
+  font-size: 0.72rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.ts-side-pct.warn { color: #f59e0b; }
+.ts-side-pct.mid { color: #38bdf8; }
+
+.ts-sidebar-empty {
+  padding: 1rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.ts-main {
+  padding: 1rem 1.1rem 1.25rem;
+  overflow: hidden;
+}
+
+.ts-panel { display: none; }
+.ts-panel.active { display: block; }
+
+.ts-table-wrap {
+  overflow: auto;
+  max-height: calc(100vh - 260px);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(6, 10, 18, 0.45);
+}
+
+.ts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.ts-table-wide { min-width: 1200px; }
+
+.ts-table th,
+.ts-table td {
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.ts-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(12, 18, 30, 0.95);
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.ts-table tbody tr:hover { background: rgba(56, 189, 248, 0.05); }
+
+.ts-name { font-weight: 600; color: var(--accent); white-space: nowrap; }
+
+.ts-file-name {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+}
+
+.ts-pill {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.ts-pill.online { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+.ts-pill.offline { background: rgba(248, 113, 113, 0.15); color: #f87171; }
+
+.ts-usage-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 88px;
+}
+
+.ts-bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.ts-bar-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #22d3ee, #38bdf8);
+  border-radius: 999px;
+}
+
+.ts-bar-fill.warn { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.ts-bar-fill.danger { background: linear-gradient(90deg, #ef4444, #f87171); }
+.ts-bar-fill.muted { background: linear-gradient(90deg, #64748b, #94a3b8); }
+
+.ts-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 2rem !important;
+}
+
+.ts-hint {
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+}
+
+.compact-tabs .instance-tab { padding: 0.35rem 0.7rem; font-size: 0.78rem; }
+
+@media (max-width: 900px) {
+  .ts-layout { grid-template-columns: 1fr; }
+  .ts-sidebar { border-right: none; border-bottom: 1px solid var(--border); max-height: 200px; }
+  .ts-sidebar-list { max-height: 140px; }
+}

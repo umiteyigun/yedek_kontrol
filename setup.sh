@@ -141,6 +141,7 @@ install_host_scripts() {
   install -m 755 "$ROOT/scripts/host-info.sh" /yedek/config/host-info.sh
   install -m 755 "$ROOT/scripts/host-timezone.sh" /yedek/config/host-timezone.sh
   install -m 755 "$ROOT/scripts/oracle-stats.sh" /yedek/config/oracle-stats.sh
+  install -m 755 "$ROOT/scripts/oracle-tablespaces.sh" /yedek/config/oracle-tablespaces.sh
   install -m 755 "$ROOT/scripts/disk-check-backup.sh" /yedek/config/disk-check-backup.sh
   install -m 755 "$ROOT/scripts/disk-report.sh" /yedek/config/disk-report.sh
   install -m 755 "$ROOT/scripts/terminal-shell.sh" /yedek/config/terminal-shell.sh

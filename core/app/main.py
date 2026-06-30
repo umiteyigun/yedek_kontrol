@@ -11,7 +11,7 @@ from app.auth import SESSION_COOKIE, SESSION_MAX_AGE, cookie_kwargs_for_request
 
 from app.config.applier import ConfigApplier
 from app.config.store import ConfigStore
-from app.routes import api, backups, panel, rman, system, terminal
+from app.routes import api, backups, panel, rman, system, tablespaces, terminal
 from app.services.local_users import LocalUserStore
 from app.services.backup_schedule import BackupScheduleService
 from app.services.ftp import DynamicFTPService
@@ -115,6 +115,7 @@ app.include_router(panel.router)
 app.include_router(backups.router)
 app.include_router(rman.router)
 app.include_router(system.router)
+app.include_router(tablespaces.router)
 app.include_router(terminal.router)
 app.include_router(api.router)
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "web" / "static")), name="static")

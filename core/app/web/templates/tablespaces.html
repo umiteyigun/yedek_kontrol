@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+{% block title %}Tablespace — Yedek Panel{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ panel_url('/static/dashboard.css', request) }}">
+<link rel="stylesheet" href="{{ panel_url('/static/pages.css', request) }}">
+{% endblock %}
+{% block body_class %}page-tablespace{% endblock %}
+{% block content %}
+<div class="dash-canvas">
+  <div class="dash-scene">
+    <div class="dash-ambient dash-ambient-a" aria-hidden="true"></div>
+    <div class="dash-ambient dash-ambient-b" aria-hidden="true"></div>
+
+    <header class="page-hero panel-3d reveal">
+      <div class="page-hero-text">
+        <p class="dash-eyebrow">Oracle · {{ oracle_sid or '—' }} · Admin</p>
+        <h1>Tablespace Kontrol</h1>
+        <p class="dash-sub">Kullanim, datafile ve kapasite ozeti</p>
+      </div>
+      <div class="page-hero-actions">
+        {% if instances|length > 1 %}
+        <nav class="instance-tabs compact-tabs">
+          {% for inst in instances %}
+          <a href="{{ panel_url('/tablespace?instance=' ~ inst.id, request) }}" class="instance-tab {% if inst.id == active_instance_id %}active{% endif %}">
+            {{ inst.label or inst.id }}
+          </a>
+          {% endfor %}
+        </nav>
+        {% endif %}
+        <a href="{{ panel_url('/', request) }}" class="btn-ghost btn-sm">Duruma Don</a>
+      </div>
+    </header>
+
+    {% if error %}
+    <div class="status-banner failed panel-3d reveal reveal-d1">{{ error }}</div>
+    {% endif %}
+
+    <div class="ts-layout panel-3d reveal reveal-d1">
+      <aside class="ts-sidebar" id="ts-sidebar">
+        <div class="ts-sidebar-head">
+          <span>Tablespace</span>
+          <button type="button" class="btn-ghost btn-sm" id="ts-show-all" title="Tum ozet">Ozet</button>
+        </div>
+        <ul class="ts-sidebar-list">
+          {% for ts in tablespaces %}
+          <li>
+            <button type="button"
+              class="ts-sidebar-item {% if selected_tablespace == ts.name %}active{% endif %}"
+              data-ts="{{ ts.name }}">
+              <span class="ts-side-name">{{ ts.name }}</span>
+              <span class="ts-side-pct {% if ts.used_pct >= 90 %}warn{% elif ts.used_pct >= 75 %}mid{% endif %}">{{ ts.used_pct }}%</span>
+            </button>
+          </li>
+          {% else %}
+          <li class="ts-sidebar-empty">Veri yok</li>
+          {% endfor %}
+        </ul>
+      </aside>
+
+      <section class="ts-main">
+        <div id="ts-overview" class="ts-panel {% if view_mode != 'datafiles' %}active{% endif %}">
+          <div class="panel-head">
+            <h2 class="panel-title"><span class="title-accent"></span>Tum Tablespace Ozeti</h2>
+            <span class="panel-meta">{{ tablespaces|length }} adet</span>
+          </div>
+          <div class="ts-table-wrap">
+            <table class="ts-table ts-table-wide">
+              <thead>
+                <tr>
+                  <th>Tablespace</th>
+                  <th>Icerik</th>
+                  <th>Durum</th>
+                  <th>Boyut</th>
+                  <th>Free</th>
+                  <th>Used</th>
+                  <th>% Used</th>
+                  <th>Max Size</th>
+                  <th>% Max</th>
+                  <th>Block</th>
+                  <th>BigFile</th>
+                  <th>Extent</th>
+                  <th>Alloc</th>
+                  <th>Segment</th>
+                  <th>Log</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for ts in tablespaces %}
+                <tr class="ts-row-click" data-ts="{{ ts.name }}">
+                  <td class="ts-name">{{ ts.name }}</td>
+                  <td>{{ ts.contents }}</td>
+                  <td><span class="ts-pill {{ ts.status|lower }}">{{ ts.status }}</span></td>
+                  <td>{{ '%.2f'|format(ts.size_gb) }} GB</td>
+                  <td>{{ '%.2f'|format(ts.free_gb) }} GB</td>
+                  <td>{{ '%.2f'|format(ts.used_gb) }} GB</td>
+                  <td>
+                    <div class="ts-usage-cell">
+                      <div class="ts-bar"><span class="ts-bar-fill {% if ts.used_pct >= 90 %}danger{% elif ts.used_pct >= 75 %}warn{% endif %}" style="width: {{ ts.used_pct }}%"></span></div>
+                      <span>{{ ts.used_pct }}%</span>
+                    </div>
+                  </td>
+                  <td>{{ '%.2f'|format(ts.max_gb) }} GB</td>
+                  <td>
+                    <div class="ts-usage-cell">
+                      <div class="ts-bar"><span class="ts-bar-fill muted" style="width: {{ ts.used_of_max_pct }}%"></span></div>
+                      <span>{{ ts.used_of_max_pct }}%</span>
+                    </div>
+                  </td>
+                  <td>{{ ts.block_size }}</td>
+                  <td>{{ ts.bigfile }}</td>
+                  <td>{{ ts.extent_management }}</td>
+                  <td>{{ ts.allocation_type }}</td>
+                  <td>{{ ts.segment_space_management }}</td>
+                  <td>{{ ts.logging }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="ts-datafiles" class="ts-panel {% if view_mode == 'datafiles' %}active{% endif %}">
+          <div class="panel-head">
+            <h2 class="panel-title"><span class="title-accent"></span>Datafiles — <span id="ts-df-title">{{ selected_tablespace or '—' }}</span></h2>
+            <span class="panel-meta" id="ts-df-count">{{ datafiles|length }} dosya (.dbf)</span>
+          </div>
+          <div class="ts-table-wrap" id="ts-df-wrap">
+            <table class="ts-table">
+              <thead>
+                <tr>
+                  <th>Datafile</th>
+                  <th>ID</th>
+                  <th>Usage</th>
+                  <th>Size</th>
+                  <th>Used</th>
+                  <th>Free</th>
+                  <th>Blocks</th>
+                  <th>Auto Ext</th>
+                  <th>Increment</th>
+                  <th>Max Size</th>
+                  <th>Status</th>
+                  <th>Frag %</th>
+                </tr>
+              </thead>
+              <tbody id="ts-df-body">
+                {% for df in datafiles %}
+                <tr>
+                  <td class="ts-file-name" title="{{ df.file_name }}">{{ df.file_name }}</td>
+                  <td>{{ df.file_id }}</td>
+                  <td>
+                    <div class="ts-usage-cell">
+                      <div class="ts-bar"><span class="ts-bar-fill {% if df.usage_pct >= 95 %}danger{% elif df.usage_pct >= 80 %}warn{% endif %}" style="width: {{ df.usage_pct }}%"></span></div>
+                      <span>{{ df.usage_pct }}%</span>
+                    </div>
+                  </td>
+                  <td>{{ '%.2f'|format(df.size_gb) }} GB</td>
+                  <td>{{ '%.2f'|format(df.used_gb) }} GB</td>
+                  <td>{{ '%.2f'|format(df.free_gb) }} GB</td>
+                  <td>{{ df.blocks }}</td>
+                  <td>{% if df.auto_extend %}✓{% else %}—{% endif %}</td>
+                  <td>{{ '%.2f'|format(df.increment_gb) }} GB</td>
+                  <td>{{ df.max_size }}</td>
+                  <td>{{ df.status }}</td>
+                  <td>{{ '%.2f'|format(df.fragmentation_index) }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <p class="form-hint ts-hint" id="ts-df-hint">Sol listeden tablespace secin veya ozet tablosunda satira tiklayin.</p>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+  const base = window.__YEDEK_BASE__ || '';
+  const instance = {{ active_instance_id|tojson }};
+  const overview = document.getElementById('ts-overview');
+  const datafiles = document.getElementById('ts-datafiles');
+  const dfBody = document.getElementById('ts-df-body');
+  const dfTitle = document.getElementById('ts-df-title');
+  const dfCount = document.getElementById('ts-df-count');
+  const dfHint = document.getElementById('ts-df-hint');
+
+  function qsInstance() {
+    return instance ? '?instance=' + encodeURIComponent(instance) : '';
+  }
+
+  function setActive(name) {
+    document.querySelectorAll('.ts-sidebar-item').forEach((el) => {
+      el.classList.toggle('active', el.dataset.ts === name);
+    });
+  }
+
+  function showOverview() {
+    overview.classList.add('active');
+    datafiles.classList.remove('active');
+    document.querySelectorAll('.ts-sidebar-item').forEach((el) => el.classList.remove('active'));
+  }
+
+  function showDatafiles() {
+    overview.classList.remove('active');
+    datafiles.classList.add('active');
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  }
+
+  function barClass(pct) {
+    if (pct >= 95) return 'danger';
+    if (pct >= 80) return 'warn';
+    return '';
+  }
+
+  function renderRows(rows) {
+    if (!rows.length) {
+      dfBody.innerHTML = '<tr><td colspan="12" class="ts-empty">Datafile bulunamadi (.dbf)</td></tr>';
+      dfCount.textContent = '0 dosya';
+      return;
+    }
+    dfBody.innerHTML = rows.map((df) => `
+      <tr>
+        <td class="ts-file-name" title="${esc(df.file_name)}">${esc(df.file_name)}</td>
+        <td>${df.file_id}</td>
+        <td><div class="ts-usage-cell"><div class="ts-bar"><span class="ts-bar-fill ${barClass(df.usage_pct)}" style="width:${df.usage_pct}%"></span></div><span>${df.usage_pct}%</span></div></td>
+        <td>${df.size_gb.toFixed(2)} GB</td>
+        <td>${df.used_gb.toFixed(2)} GB</td>
+        <td>${df.free_gb.toFixed(2)} GB</td>
+        <td>${df.blocks}</td>
+        <td>${df.auto_extend ? '✓' : '—'}</td>
+        <td>${df.increment_gb.toFixed(2)} GB</td>
+        <td>${esc(df.max_size)}</td>
+        <td>${esc(df.status)}</td>
+        <td>${df.fragmentation_index.toFixed(2)}</td>
+      </tr>`).join('');
+    dfCount.textContent = rows.length + ' dosya (.dbf)';
+  }
+
+  async function loadDatafiles(name) {
+    dfHint.textContent = 'Yukleniyor...';
+    showDatafiles();
+    setActive(name);
+    dfTitle.textContent = name;
+    const url = base + '/api/tablespaces/' + encodeURIComponent(name) + '/datafiles' + qsInstance();
+    try {
+      const res = await fetch(url, { credentials: 'same-origin' });
+      const data = await res.json();
+      if (!data.ok) {
+        dfBody.innerHTML = '<tr><td colspan="12" class="ts-empty">' + esc(data.error || 'Hata') + '</td></tr>';
+        dfHint.textContent = '';
+        return;
+      }
+      renderRows(data.datafiles || []);
+      dfHint.textContent = '';
+      const u = new URL(window.location.href);
+      u.searchParams.set('ts', name);
+      if (instance) u.searchParams.set('instance', instance);
+      history.replaceState({}, '', u.pathname + u.search);
+    } catch (e) {
+      dfBody.innerHTML = '<tr><td colspan="12" class="ts-empty">Baglanti hatasi</td></tr>';
+      dfHint.textContent = '';
+    }
+  }
+
+  document.getElementById('ts-show-all')?.addEventListener('click', () => {
+    showOverview();
+    const u = new URL(window.location.href);
+    u.searchParams.delete('ts');
+    history.replaceState({}, '', u.pathname + u.search);
+  });
+
+  document.querySelectorAll('.ts-sidebar-item').forEach((btn) => {
+    btn.addEventListener('click', () => loadDatafiles(btn.dataset.ts));
+  });
+
+  document.querySelectorAll('.ts-row-click').forEach((row) => {
+    row.addEventListener('click', () => loadDatafiles(row.dataset.ts));
+    row.style.cursor = 'pointer';
+  });
+
+  {% if selected_tablespace and view_mode == 'datafiles' %}
+  setActive({{ selected_tablespace|tojson }});
+  {% endif %}
+})();
+</script>
+{% endblock %}
