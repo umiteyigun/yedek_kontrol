@@ -1717,8 +1717,19 @@ body.page-tablespace .container { padding-top: 2rem; }
   text-align: left;
   cursor: pointer;
   font: inherit;
+  text-decoration: none;
   transition: background 0.15s;
 }
+
+.ts-name-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.ts-name-link:hover { text-decoration: underline; }
+
+.ts-row-click { cursor: pointer; }
 
 .ts-sidebar-item:hover,
 .ts-sidebar-item.active {

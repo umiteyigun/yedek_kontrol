@@ -46,17 +46,17 @@
       <aside class="ts-sidebar" id="ts-sidebar">
         <div class="ts-sidebar-head">
           <span>Tablespace</span>
-          <button type="button" class="btn-ghost btn-sm" id="ts-show-all" title="Tum ozet">Ozet</button>
+          <a href="{{ panel_url('/tablespace?instance=' ~ active_instance_id, request) if active_instance_id else panel_url('/tablespace', request) }}"
+            class="btn-ghost btn-sm" title="Tum ozet">Ozet</a>
         </div>
         <ul class="ts-sidebar-list">
           {% for ts in tablespaces %}
           <li>
-            <button type="button"
-              class="ts-sidebar-item {% if selected_tablespace == ts.name %}active{% endif %}"
-              data-ts="{{ ts.name }}">
+            <a href="{{ panel_url('/tablespace?instance=' ~ active_instance_id ~ '&ts=' ~ ts.name, request) if active_instance_id else panel_url('/tablespace?ts=' ~ ts.name, request) }}"
+              class="ts-sidebar-item {% if selected_tablespace == ts.name %}active{% endif %}">
               <span class="ts-side-name">{{ ts.name }}</span>
               <span class="ts-side-pct {% if ts.used_pct >= 90 %}warn{% elif ts.used_pct >= 75 %}mid{% endif %}">{{ ts.used_pct }}%</span>
-            </button>
+            </a>
           </li>
           {% else %}
           <li class="ts-sidebar-empty">Veri yok</li>
@@ -93,8 +93,11 @@
               </thead>
               <tbody>
                 {% for ts in tablespaces %}
-                <tr class="ts-row-click" data-ts="{{ ts.name }}">
-                  <td class="ts-name">{{ ts.name }}</td>
+                <tr class="ts-row-click">
+                  <td class="ts-name">
+                    <a href="{{ panel_url('/tablespace?instance=' ~ active_instance_id ~ '&ts=' ~ ts.name, request) if active_instance_id else panel_url('/tablespace?ts=' ~ ts.name, request) }}"
+                      class="ts-name-link">{{ ts.name }}</a>
+                  </td>
                   <td>{{ ts.contents }}</td>
                   <td><span class="ts-pill {{ ts.status|lower }}">{{ ts.status }}</span></td>
                   <td>{{ '%.2f'|format(ts.size_gb) }} GB</td>
@@ -178,7 +181,9 @@
               </tbody>
             </table>
           </div>
-          <p class="form-hint ts-hint" id="ts-df-hint">Sol listeden tablespace secin veya ozet tablosunda satira tiklayin.</p>
+          <p class="form-hint ts-hint" id="ts-df-hint">
+            {% if view_mode == 'datafiles' and datafiles %}Toplam {{ datafiles|length }} datafile.{% else %}Sol listeden tablespace secin veya ozet tablosunda isme tiklayin.{% endif %}
+          </p>
         </div>
       </section>
     </div>
@@ -186,144 +191,4 @@
 </div>
 {% endblock %}
 
-{% block extra_scripts %}
-<script>
-(function () {
-  const base = window.__YEDEK_BASE__ || '';
-  const instanceDefault = {{ active_instance_id|tojson }};
-  const overview = document.getElementById('ts-overview');
-  const datafiles = document.getElementById('ts-datafiles');
-  const dfBody = document.getElementById('ts-df-body');
-  const dfTitle = document.getElementById('ts-df-title');
-  const dfCount = document.getElementById('ts-df-count');
-  const dfHint = document.getElementById('ts-df-hint');
-
-  function currentInstance() {
-    const fromUrl = new URL(window.location.href).searchParams.get('instance');
-    return fromUrl || instanceDefault || '';
-  }
-
-  function qsInstance() {
-    const id = currentInstance();
-    return id ? '?instance=' + encodeURIComponent(id) : '';
-  }
-
-  function setActive(name) {
-    document.querySelectorAll('.ts-sidebar-item').forEach((el) => {
-      el.classList.toggle('active', el.dataset.ts === name);
-    });
-  }
-
-  function showOverview() {
-    overview.classList.add('active');
-    datafiles.classList.remove('active');
-    document.querySelectorAll('.ts-sidebar-item').forEach((el) => el.classList.remove('active'));
-  }
-
-  function showDatafiles() {
-    overview.classList.remove('active');
-    datafiles.classList.add('active');
-  }
-
-  function esc(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  }
-
-  function barClass(pct) {
-    if (pct >= 95) return 'danger';
-    if (pct >= 80) return 'warn';
-    return '';
-  }
-
-  function renderRows(rows) {
-    if (!rows.length) {
-      dfBody.innerHTML = '<tr><td colspan="12" class="ts-empty">Bu tablespace icin datafile bulunamadi</td></tr>';
-      dfCount.textContent = '0 dosya';
-      return;
-    }
-    dfBody.innerHTML = rows.map((df) => `
-      <tr>
-        <td class="ts-file-name" title="${esc(df.file_name)}">${esc(df.file_name)}</td>
-        <td>${df.file_id}</td>
-        <td><div class="ts-usage-cell"><div class="ts-bar"><span class="ts-bar-fill ${barClass(df.usage_pct)}" style="width:${df.usage_pct}%"></span></div><span>${df.usage_pct}%</span></div></td>
-        <td>${df.size_gb.toFixed(2)} GB</td>
-        <td>${df.used_gb.toFixed(2)} GB</td>
-        <td>${df.free_gb.toFixed(2)} GB</td>
-        <td>${df.blocks}</td>
-        <td>${df.auto_extend ? '✓' : '—'}</td>
-        <td>${df.increment_gb.toFixed(2)} GB</td>
-        <td>${esc(df.max_size)}</td>
-        <td>${esc(df.status)}</td>
-        <td>${df.fragmentation_index.toFixed(2)}</td>
-      </tr>`).join('');
-    dfCount.textContent = rows.length + ' datafile';
-  }
-
-  let loadingTs = '';
-
-  async function loadDatafiles(name) {
-    if (!name) return;
-    loadingTs = name;
-    dfHint.textContent = 'Yukleniyor...';
-    dfBody.innerHTML = '<tr><td colspan="12" class="ts-empty">Yukleniyor...</td></tr>';
-    showDatafiles();
-    setActive(name);
-    dfTitle.textContent = name;
-    const url = base + '/api/tablespaces/' + encodeURIComponent(name) + '/datafiles' + qsInstance();
-    try {
-      const res = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
-      if (!res.ok) {
-        dfBody.innerHTML = '<tr><td colspan="12" class="ts-empty">HTTP ' + esc(String(res.status)) + '</td></tr>';
-        dfHint.textContent = '';
-        return;
-      }
-      const data = await res.json();
-      if (loadingTs !== name) return;
-      if (!data.ok) {
-        dfBody.innerHTML = '<tr><td colspan="12" class="ts-empty">' + esc(data.error || 'Hata') + '</td></tr>';
-        dfCount.textContent = '0 dosya';
-        dfHint.textContent = '';
-        return;
-      }
-      renderRows(data.datafiles || []);
-      dfHint.textContent = data.datafiles && data.datafiles.length ? '' : 'Datafile yok';
-      const u = new URL(window.location.href);
-      u.searchParams.set('ts', name);
-      const inst = currentInstance();
-      if (inst) u.searchParams.set('instance', inst);
-      history.replaceState({}, '', u.pathname + u.search);
-    } catch (e) {
-      dfBody.innerHTML = '<tr><td colspan="12" class="ts-empty">Baglanti hatasi</td></tr>';
-      dfHint.textContent = '';
-    }
-  }
-
-  document.getElementById('ts-show-all')?.addEventListener('click', () => {
-    showOverview();
-    const u = new URL(window.location.href);
-    u.searchParams.delete('ts');
-    history.replaceState({}, '', u.pathname + u.search);
-  });
-
-  document.getElementById('ts-sidebar')?.addEventListener('click', (ev) => {
-    const btn = ev.target.closest('.ts-sidebar-item');
-    if (!btn || !btn.dataset.ts) return;
-    ev.preventDefault();
-    loadDatafiles(btn.dataset.ts);
-  });
-
-  document.querySelectorAll('.ts-row-click').forEach((row) => {
-    row.addEventListener('click', () => loadDatafiles(row.dataset.ts));
-    row.style.cursor = 'pointer';
-  });
-
-  {% if selected_tablespace and view_mode == 'datafiles' %}
-  setActive({{ selected_tablespace|tojson }});
-  showDatafiles();
-  {% if datafiles|length == 0 %}
-  loadDatafiles({{ selected_tablespace|tojson }});
-  {% endif %}
-  {% endif %}
-})();
-</script>
-{% endblock %}
+{% block extra_scripts %}{% endblock %}
