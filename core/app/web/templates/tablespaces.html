@@ -194,11 +194,6 @@
   const dfCount = document.getElementById('ts-df-count');
   const dfHint = document.getElementById('ts-df-hint');
 
-  const overviewBody = document.querySelector('#ts-overview tbody');
-  const overviewMeta = document.querySelector('#ts-overview .panel-meta');
-  const sidebarList = document.querySelector('.ts-sidebar-list');
-  const eyebrow = document.querySelector('.dash-eyebrow');
-
   function currentInstance() {
     const fromUrl = new URL(window.location.href).searchParams.get('instance');
     return fromUrl || instanceDefault || '';
