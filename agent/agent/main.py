@@ -31,8 +31,11 @@ async def ensure_registered(settings: AgentSettings) -> AgentSettings:
         "node_label": settings.node_label,
         "node_role": settings.node_role,
     }
+    headers: dict[str, str] = {}
+    if settings.register_secret:
+        headers["X-Agent-Register-Key"] = settings.register_secret
     async with httpx.AsyncClient(timeout=30.0, verify=settings.verify_tls) as client:
-        resp = await client.post(url, json=payload)
+        resp = await client.post(url, json=payload, headers=headers)
         resp.raise_for_status()
         data = resp.json()
     save_registration(

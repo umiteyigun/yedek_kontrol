@@ -20,6 +20,7 @@ class AgentSettings:
     agent_token: str
     agent_id: str
     verify_tls: bool
+    register_secret: str
 
 
 def _read_state(path: Path) -> dict[str, str]:
@@ -68,6 +69,7 @@ def load_settings() -> AgentSettings:
         agent_token=token,
         agent_id=agent_id,
         verify_tls=os.getenv("AGENT_VERIFY_TLS", "0").strip() in {"1", "true", "yes"},
+        register_secret=os.getenv("HUB_AGENT_REGISTER_SECRET", "").strip(),
     )
 
 
