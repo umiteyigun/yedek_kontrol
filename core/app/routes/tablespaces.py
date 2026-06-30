@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.auth import can_manage_settings, get_current_user, login_redirect, settings_denied_redirect
 from app.routes.context import active_instance, page_context
+from app.services.oracle_probe import is_instance_running
 from app.services.oracle_tablespaces import list_datafiles, list_tablespaces
 from app.web.templates_env import templates
 
@@ -15,7 +16,14 @@ router = APIRouter(tags=["tablespaces"])
 
 def _resolve_instance(request: Request):
     settings = request.app.state.store.get()
-    inst = active_instance(settings, request) or settings.first_instance()
+    inst = active_instance(settings, request)
+    if inst is None:
+        for candidate in settings.instances:
+            if is_instance_running(candidate.oracle_sid):
+                inst = candidate
+                break
+        if inst is None:
+            inst = settings.first_instance()
     return settings, inst
 
 

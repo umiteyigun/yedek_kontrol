@@ -18,15 +18,22 @@
         <p class="dash-sub">Kullanim, datafile ve kapasite ozeti</p>
       </div>
       <div class="page-hero-actions">
-        {% if instances|length > 1 %}
-        <nav class="instance-tabs compact-tabs">
+        <nav class="instance-tabs compact-tabs ts-instance-tabs" aria-label="Oracle instance">
           {% for inst in instances %}
-          <a href="{{ panel_url('/tablespace?instance=' ~ inst.id, request) }}" class="instance-tab {% if inst.id == active_instance_id %}active{% endif %}">
-            {{ inst.label or inst.id }}
+          {% if inst.oracle_running %}
+          <a href="{{ panel_url('/tablespace?instance=' ~ inst.id, request) }}"
+            class="instance-tab {% if inst.id == active_instance_id %}active{% endif %}">
+            <span class="instance-status-dot ok"></span>
+            {{ inst.display_name or inst.label or inst.id }} <span>{{ inst.oracle_sid }}</span>
           </a>
+          {% else %}
+          <span class="instance-tab instance-tab-off" title="Oracle kapali ({{ inst.oracle_sid }})">
+            <span class="instance-status-dot off"></span>
+            {{ inst.display_name or inst.label or inst.id }} <span>{{ inst.oracle_sid }}</span>
+          </span>
+          {% endif %}
           {% endfor %}
         </nav>
-        {% endif %}
         <a href="{{ panel_url('/', request) }}" class="btn-ghost btn-sm">Duruma Don</a>
       </div>
     </header>
