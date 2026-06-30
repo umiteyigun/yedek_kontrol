@@ -62,17 +62,11 @@ LEFT JOIN (
   SELECT tablespace_name,
          SUM(bytes) bytes,
          SUM(DECODE(autoextensible,'YES',maxbytes,bytes)) maxbytes
-  FROM (
-    SELECT tablespace_name, bytes, maxbytes, autoextensible FROM dba_data_files
-    UNION ALL
-    SELECT tablespace_name, bytes, maxbytes, autoextensible FROM dba_temp_files
-  )
+  FROM dba_data_files
   GROUP BY tablespace_name
 ) a ON t.tablespace_name = a.tablespace_name
 LEFT JOIN (
   SELECT tablespace_name, SUM(bytes) bytes FROM dba_free_space GROUP BY tablespace_name
-  UNION ALL
-  SELECT tablespace_name, SUM(bytes_free) bytes FROM dba_temp_free_space GROUP BY tablespace_name
 ) f ON t.tablespace_name = f.tablespace_name
 ORDER BY 1;
 "
