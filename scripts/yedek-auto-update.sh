@@ -48,6 +48,9 @@ LOCAL_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
 REMOTE_SHA="$(git ls-remote origin "refs/heads/${AUTO_UPDATE_BRANCH}" 2>/dev/null | awk '{print $1}' | head -1)"
 [[ -n "$REMOTE_SHA" ]] || exit 0
 
+# git 1.8.x: fetch sadece FETCH_HEAD gunceller; origin/main ref eski kalabilir
+git fetch origin "$AUTO_UPDATE_BRANCH" >/dev/null 2>&1 || true
+
 if [[ "$LOCAL_SHA" == "$REMOTE_SHA" ]]; then
   exit 0
 fi

@@ -61,9 +61,9 @@ if [[ -n "${AUTO_UPDATE_GIT_TOKEN:-}" ]]; then
 fi
 
 git fetch origin "$AUTO_UPDATE_BRANCH"
-if ! git merge --ff-only "origin/$AUTO_UPDATE_BRANCH"; then
+if ! git merge --ff-only FETCH_HEAD; then
   echo "[$(ts)] ff-only basarisiz, hard reset: origin/$AUTO_UPDATE_BRANCH"
-  git reset --hard "origin/$AUTO_UPDATE_BRANCH"
+  git reset --hard FETCH_HEAD
 fi
 
 for rel in "${PRESERVE[@]}"; do
