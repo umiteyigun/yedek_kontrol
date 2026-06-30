@@ -186,7 +186,7 @@
 <script>
 (function () {
   const base = window.__YEDEK_BASE__ || '';
-  const instance = {{ active_instance_id|tojson }};
+  const instanceDefault = {{ active_instance_id|tojson }};
   const overview = document.getElementById('ts-overview');
   const datafiles = document.getElementById('ts-datafiles');
   const dfBody = document.getElementById('ts-df-body');
@@ -194,8 +194,19 @@
   const dfCount = document.getElementById('ts-df-count');
   const dfHint = document.getElementById('ts-df-hint');
 
+  const overviewBody = document.querySelector('#ts-overview tbody');
+  const overviewMeta = document.querySelector('#ts-overview .panel-meta');
+  const sidebarList = document.querySelector('.ts-sidebar-list');
+  const eyebrow = document.querySelector('.dash-eyebrow');
+
+  function currentInstance() {
+    const fromUrl = new URL(window.location.href).searchParams.get('instance');
+    return fromUrl || instanceDefault || '';
+  }
+
   function qsInstance() {
-    return instance ? '?instance=' + encodeURIComponent(instance) : '';
+    const id = currentInstance();
+    return id ? '?instance=' + encodeURIComponent(id) : '';
   }
 
   function setActive(name) {
@@ -267,7 +278,8 @@
       dfHint.textContent = '';
       const u = new URL(window.location.href);
       u.searchParams.set('ts', name);
-      if (instance) u.searchParams.set('instance', instance);
+      const inst = currentInstance();
+      if (inst) u.searchParams.set('instance', inst);
       history.replaceState({}, '', u.pathname + u.search);
     } catch (e) {
       dfBody.innerHTML = '<tr><td colspan="12" class="ts-empty">Baglanti hatasi</td></tr>';

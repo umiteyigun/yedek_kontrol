@@ -55,6 +55,7 @@ def tablespace_page(request: Request):
             "tablespaces": rows,
             "datafiles": datafiles,
             "selected_tablespace": selected,
+            "active_instance_id": inst.id if inst else "",
             "oracle_sid": inst.oracle_sid if inst else "",
             "error": error or ctx.get("error", ""),
             "view_mode": "datafiles" if selected and datafiles else "overview",
