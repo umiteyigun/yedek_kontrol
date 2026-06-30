@@ -218,30 +218,44 @@ backup_current_instance() {
     job_name="${yedekleme}${tarih}"
   )
 
+  run_expdp_allow_warnings() {
+    local expdp_exit=0
+    set +e
+    "$@"
+    expdp_exit=$?
+    set -e
+    if [[ ! -f "${directorydizini}${dmpdosyaadi}" ]]; then
+      die "expdp basarisiz (exit=${expdp_exit}), dmp yok: ${directorydizini}${dmpdosyaadi}"
+    fi
+    if [[ $expdp_exit -ne 0 ]]; then
+      log "UYARI: expdp uyarilarla tamamlandi (exit=${expdp_exit}), sikistirmaya devam [${INSTANCE_ID}]"
+    fi
+  }
+
   case "$backup_protect_mode" in
     oracle)
       if [[ "$yedektipi" == "GUNLUK" ]]; then
-        "${expdp_common[@]}" schemas="$schemas" \
+        run_expdp_allow_warnings "${expdp_common[@]}" schemas="$schemas" \
           compression=all encryption=all encryption_mode=password \
           encryption_password="$backup_protect_pass"
       else
-        "${expdp_common[@]}" full=y flashback_time=systimestamp \
+        run_expdp_allow_warnings "${expdp_common[@]}" full=y flashback_time=systimestamp \
           compression=all encryption=all encryption_mode=password \
           encryption_password="$backup_protect_pass"
       fi
       ;;
     zip)
       if [[ "$yedektipi" == "GUNLUK" ]]; then
-        "${expdp_common[@]}" schemas="$schemas" compression=all
+        run_expdp_allow_warnings "${expdp_common[@]}" schemas="$schemas" compression=all
       else
-        "${expdp_common[@]}" full=y flashback_time=systimestamp compression=all
+        run_expdp_allow_warnings "${expdp_common[@]}" full=y flashback_time=systimestamp compression=all
       fi
       ;;
     gzip|*)
       if [[ "$yedektipi" == "GUNLUK" ]]; then
-        "${expdp_common[@]}" schemas="$schemas"
+        run_expdp_allow_warnings "${expdp_common[@]}" schemas="$schemas"
       else
-        "${expdp_common[@]}" full=y flashback_time=systimestamp
+        run_expdp_allow_warnings "${expdp_common[@]}" full=y flashback_time=systimestamp
       fi
       ;;
   esac

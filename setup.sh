@@ -188,6 +188,7 @@ UNIT
 install_systemd_services() {
   log "systemd servisleri kuruluyor (reboot sonrasi otomatik baslatma)..."
   chmod +x "$ROOT/scripts/yedek-docker-ctl.sh"
+  chmod +x "$ROOT/scripts/yedek-auto-update.sh" "$ROOT/scripts/yedek-local-deploy.sh"
 
   sed "s|__YEDEK_ROOT__|${ROOT}|g" "$ROOT/scripts/yedek-docker.service.tpl" \
     >/etc/systemd/system/yedek-docker.service
@@ -198,6 +199,50 @@ install_systemd_services() {
   systemctl enable yedek-backup-watcher.service
   systemctl restart yedek-backup-watcher.service
   log "enable: docker, yedek-docker, yedek-backup-watcher"
+}
+
+prepare_auto_update_config() {
+  local dst="/yedek/config/auto-update.env"
+  local local_dst="/yedek/config/auto-update.local.sh"
+  local example="$ROOT/config/auto-update.example.env"
+  local local_example="$ROOT/config/auto-update.local.example.sh"
+
+  if [[ ! -f "$dst" && -f "$example" ]]; then
+    install -m 600 "$example" "$dst"
+    sed -i "s|^# YEDEK_ROOT=.*|YEDEK_ROOT=${ROOT}|" "$dst" 2>/dev/null || true
+    if ! grep -q "^YEDEK_ROOT=" "$dst" 2>/dev/null; then
+      echo "YEDEK_ROOT=${ROOT}" >>"$dst"
+    fi
+    log "Auto-update config olusturuldu: $dst"
+  elif [[ -f "$dst" ]] && ! grep -q "^YEDEK_ROOT=" "$dst" 2>/dev/null; then
+    echo "YEDEK_ROOT=${ROOT}" >>"$dst"
+  fi
+
+  if [[ ! -f "$local_dst" && -f "$local_example" ]]; then
+    install -m 600 "$local_example" "$local_dst"
+    log "Auto-update yerel koruma listesi: $local_dst"
+  fi
+}
+
+install_auto_update_timer() {
+  if [[ ! -d "$ROOT/.git" ]]; then
+    log "Auto-update atlandi: $ROOT git repo degil (tarball kurulum?)"
+    return 0
+  fi
+
+  prepare_auto_update_config
+
+  sed "s|__YEDEK_ROOT__|${ROOT}|g" "$ROOT/scripts/yedek-auto-update.service.tpl" \
+    >/etc/systemd/system/yedek-auto-update.service
+  cp "$ROOT/scripts/yedek-auto-update.timer.tpl" /etc/systemd/system/yedek-auto-update.timer
+
+  touch /var/log/yedek-auto-update.log
+  chmod 640 /var/log/yedek-auto-update.log
+
+  systemctl daemon-reload
+  systemctl enable yedek-auto-update.timer
+  systemctl start yedek-auto-update.timer
+  log "enable: yedek-auto-update.timer (her ~2dk GitHub kontrol)"
 }
 
 # --- Merkez agent (yedek-docker ile kurulur) ---
@@ -307,10 +352,13 @@ print_summary() {
   Systemd (reboot sonrasi otomatik):
     yedek-docker.service         -> docker stack (panel, API, FTP)
     yedek-backup-watcher.service -> panelden yedek tetikleme
+    yedek-auto-update.timer      -> GitHub commit kontrolu (~2dk)
     docker.service               -> container motoru
 
   Komutlar:
     systemctl status yedek-docker yedek-backup-watcher
+    systemctl status yedek-auto-update.timer
+    tail -f /var/log/yedek-auto-update.log
     systemctl restart yedek-docker
     docker compose -f $ROOT/docker-compose.yml logs -f core
     docker compose -f $ROOT/docker-compose.yml logs -f central-agent
@@ -335,6 +383,7 @@ main() {
   start_stack
   bash "$ROOT/scripts/install-panel-ssl.sh" || log "UYARI: HTTPS nginx kurulumu atlandi veya basarisiz"
   install_systemd_services
+  install_auto_update_timer
   print_summary
   log "=== setup bitti ==="
 }
