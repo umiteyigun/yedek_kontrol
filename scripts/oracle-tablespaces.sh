@@ -131,7 +131,7 @@ if [[ -z "$PYBIN" ]]; then
   exit 0
 fi
 "$PYBIN" - <<'PY'
-import json, os
+import json, os, sys
 
 mode = os.environ["MODE"]
 sid = os.environ["SID"]
@@ -139,9 +139,9 @@ ts = os.environ.get("TS_NAME", "")
 error = os.environ.get("ERROR", "")
 rows_file = os.environ["ROWS_FILE"]
 lines = []
-with open(rows_file, encoding="utf-8", errors="replace") as f:
-    for line in f:
-        line = line.strip()
+with open(rows_file, "rb") as f:
+    for raw in f:
+        line = raw.decode("utf-8", "replace").strip()
         if line:
             lines.append(line)
 
