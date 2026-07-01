@@ -11,7 +11,7 @@ from app.auth import SESSION_COOKIE, SESSION_MAX_AGE, cookie_kwargs_for_request
 
 from app.config.applier import ConfigApplier
 from app.config.store import ConfigStore
-from app.routes import api, backups, panel, rman, system, tablespaces, terminal
+from app.routes import api, backups, hub_commands, panel, rman, system, tablespaces, terminal
 from app.services.central_proxy_auth import CENTRAL_PROXY_SECRET, MIN_CENTRAL_PROXY_SECRET_LEN
 from app.services.local_roles import LocalRoleStore
 from app.services.local_users import LocalUserStore
@@ -141,4 +141,5 @@ app.include_router(system.router)
 app.include_router(tablespaces.router)
 app.include_router(terminal.router)
 app.include_router(api.router)
+app.include_router(hub_commands.router)
 app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "web" / "static")), name="static")

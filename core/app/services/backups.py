@@ -192,6 +192,9 @@ def resend_backups_to_ftp(
 ) -> dict[str, object]:
     from app.services.ftp_client import upload_files
 
+    if not instance.ftp_upload_enabled:
+        raise ValueError("Uzak FTP yuklemesi bu kurumda kapali")
+
     ftp_host, ftp_user, ftp_pass = instance.effective_ftp(settings)
     if not str(ftp_host).strip():
         raise ValueError("FTP sunucu adresi tanimli degil")

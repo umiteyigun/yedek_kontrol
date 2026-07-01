@@ -16,17 +16,65 @@ from app.services.oracle_rman_probe import rman_runtime_map
 from app.services.server_info import collect_all_instance_oracle_stats, get_server_info
 
 
-def _last_reports_by_instance(config_dir: Path) -> dict[str, dict[str, Any]]:
+def _is_credible_report(entry: dict[str, Any]) -> bool:
+    guid = str(entry.get("GuidKey") or "").strip().lower()
+    dosya = str(entry.get("DosyaAdi") or "").strip().lower()
+    if guid == "test" or dosya.startswith("test."):
+        return False
+    raw = str(entry.get("YedekBoyutu", "")).strip()
+    if not raw or raw == "-1":
+        return False
+    try:
+        size = int(raw)
+    except ValueError:
+        return False
+    return size >= 102_400
+
+
+def _last_reports_by_instance(
+    config_dir: Path,
+    instances: list,
+) -> dict[str, dict[str, Any]]:
     """InstanceId -> son YedekBildirimi kaydi (kurumsalapi alanlari)."""
-    items = NotificationService(config_dir).recent(limit=200)
+    items = NotificationService(config_dir).recent(limit=500)
     by_inst: dict[str, dict[str, Any]] = {}
+
+    def match_score(entry: dict[str, Any], inst) -> int:
+        entry_id = str(entry.get("InstanceId") or "").strip()
+        if entry_id and entry_id == inst.id:
+            return 100
+        if entry_id in {"varsayilan", "default"} and len(instances) == 1:
+            return 95
+        score = 0
+        entry_sid = str(entry.get("OracleSid") or "").strip().lower()
+        inst_sid = str(inst.oracle_sid or "").strip().lower()
+        if entry_sid and inst_sid and entry_sid == inst_sid:
+            score += 50
+        entry_kurum = str(entry.get("KurumNo") or "").strip().upper()
+        inst_kurum = str(inst.kurumkodu or "").strip().upper()
+        if entry_kurum and inst_kurum and entry_kurum == inst_kurum:
+            score += 40
+        entry_hastane = str(entry.get("Hastane") or "").strip().upper()
+        inst_hastane = str(inst.hastane or "").strip().upper()
+        if entry_hastane and inst_hastane and entry_hastane == inst_hastane:
+            score += 30
+        return score
+
     for entry in items:
-        iid = str(entry.get("InstanceId") or "").strip()
-        if not iid:
+        best_id: str | None = None
+        best_score = 0
+        for inst in instances:
+            score = match_score(entry, inst)
+            if score > best_score:
+                best_score = score
+                best_id = inst.id
+        if not best_id or best_score < 30:
             continue
-        prev = by_inst.get(iid)
+        if not _is_credible_report(entry):
+            continue
+        prev = by_inst.get(best_id)
         if not prev or str(entry.get("received_at", "")) > str(prev.get("received_at", "")):
-            by_inst[iid] = entry
+            by_inst[best_id] = entry
     return by_inst
 
 
@@ -38,7 +86,10 @@ def collect_agent_snapshot(
     runtime_map = instance_runtime_map(settings.model_dump())
     rman_runtime = rman_runtime_map(settings.model_dump())
     oracle_stats_map = collect_all_instance_oracle_stats(settings, runtime_map)
-    last_reports = _last_reports_by_instance(getattr(store, "_config_dir", Path("/app/config")))
+    last_reports = _last_reports_by_instance(
+        getattr(store, "_config_dir", Path("/app/config")),
+        settings.instances,
+    )
 
     instances: list[dict[str, Any]] = []
     for inst in settings.instances:

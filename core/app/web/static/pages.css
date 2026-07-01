@@ -705,6 +705,14 @@ button.instance-tab {
   text-align: left;
 }
 
+.ftp-config-fields[data-ftp-disabled="1"] {
+  opacity: 0.55;
+}
+
+.ftp-config-fields[data-ftp-disabled="1"] input {
+  pointer-events: none;
+}
+
 .backup-protect-block {
   margin-top: 0.35rem;
   padding-top: 0.75rem;

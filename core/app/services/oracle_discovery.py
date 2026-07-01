@@ -103,6 +103,7 @@ def build_instance_from_sid(sid: str, yedek_dir: str, instance_id: str) -> dict[
         "localftpuser": "",
         "localftppass": "",
         "localftpdir": "/",
+        "ftp_upload_enabled": False,
         "retention_days": 2,
         "backup_protect_mode": "gzip",
         "backup_protect_pass": "",

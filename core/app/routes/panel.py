@@ -62,7 +62,10 @@ def _parse_all_instances_form(form, current: YedekSettings) -> list[dict[str, An
     instances: list[dict[str, Any]] = []
     for inst in current.instances:
         prefix = f"inst_{inst.id}_"
-        if not any(form.get(f"{prefix}{name}") is not None for name in ("hastane", "enabled", "localftpip")):
+        if not any(
+            form.get(f"{prefix}{name}") is not None
+            for name in ("hastane", "enabled", "localftpip", "ftp_upload_enabled")
+        ):
             instances.append(inst.model_dump())
             continue
         instances.append(_parse_instance_form(form, inst, current.yedek_dir, prefix=prefix))
@@ -107,6 +110,7 @@ def _parse_instance_form(
         "localftpuser": field("localftpuser", inst.localftpuser),
         "localftppass": ftp_pass if ftp_pass else inst.localftppass,
         "localftpdir": field("localftpdir", inst.localftpdir or "/") or "/",
+        "ftp_upload_enabled": form.get(f"{prefix}ftp_upload_enabled") == "1",
         "retention_days": max(1, int(retention_raw or inst.retention_days or 2)),
         "backup_protect_mode": protect_mode,
         "backup_protect_pass": protect_pass if protect_pass else inst.backup_protect_pass,
@@ -160,12 +164,13 @@ def _validate_instance(inst: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if not str(inst.get("hastane", "")).strip():
         errors.append(f"{label}: hastane adi zorunlu")
-    if not str(inst.get("localftpip", "")).strip():
-        errors.append(f"{label}: uzak FTP IP zorunlu")
-    if not str(inst.get("localftpuser", "")).strip():
-        errors.append(f"{label}: uzak FTP kullanici zorunlu")
-    if not str(inst.get("localftppass", "")).strip():
-        errors.append(f"{label}: uzak FTP sifre zorunlu")
+    if inst.get("ftp_upload_enabled"):
+        if not str(inst.get("localftpip", "")).strip():
+            errors.append(f"{label}: uzak FTP IP zorunlu")
+        if not str(inst.get("localftpuser", "")).strip():
+            errors.append(f"{label}: uzak FTP kullanici zorunlu")
+        if not str(inst.get("localftppass", "")).strip():
+            errors.append(f"{label}: uzak FTP sifre zorunlu")
     mode = str(inst.get("backup_protect_mode", "gzip")).lower()
     if mode in {"oracle", "zip"} and not str(inst.get("backup_protect_pass", "")).strip():
         errors.append(f"{label}: yedek koruma sifresi zorunlu ({mode})")

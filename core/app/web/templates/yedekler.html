@@ -104,7 +104,7 @@
       {% if backups %}
       <form method="post" action="/yedekler/ftp-gonder" id="ftp-resend-form">
         <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
-        {% if can_backup_edit %}
+        {% if can_backup_edit and active_instance.ftp_upload_enabled %}
         <div class="backup-bulk-bar">
           <label class="backup-select-all">
             <input type="checkbox" id="backup-select-all" aria-label="Tumunu sec">

@@ -320,8 +320,15 @@ RMANEOF
     free -m 2>/dev/null || free
   } >>"$log_file" 2>&1
 
-  log "FTP yukleniyor [${INSTANCE_ID}]: ${localftpip}:${localftpdir:-/}/rman/${run_subdir}/${run_name}"
-  upload_rman_folder "$run_dir" "${run_subdir}/${run_name}"
+  if [[ "${ftp_upload_enabled:-0}" == "1" ]]; then
+    log "FTP yukleniyor [${INSTANCE_ID}]: ${localftpip}:${localftpdir:-/}/rman/${run_subdir}/${run_name}"
+    upload_rman_folder "$run_dir" "${run_subdir}/${run_name}"
+  else
+    localftpstat=""
+    filesize=$(du -sb "$run_dir" 2>/dev/null | awk '{print $1}' || echo "-1")
+    upload_dosyaadi="rman/${run_subdir}/${run_name}"
+    log "FTP atlandi (pasif) [${INSTANCE_ID}]: rman/${run_subdir}/${run_name}"
+  fi
 
   notify_rman_backup
 

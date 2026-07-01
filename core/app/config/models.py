@@ -27,7 +27,11 @@ INSTANCE_FIELDS = (
     "backup_protect_pass",
     "backup_split_enabled",
     "backup_split_size_mb",
+    "ftp_upload_enabled",
 )
+
+
+_FTP_PLACEHOLDER_IPS = frozenset({"", "127.0.0.1", "ftp_ip"})
 
 
 def slugify(text: str) -> str:
@@ -211,6 +215,7 @@ class InstanceSettings(BaseModel):
     localftpuser: str = ""
     localftppass: str = ""
     localftpdir: str = "/"
+    ftp_upload_enabled: bool = False
     retention_days: int = Field(default=0, ge=0, le=365)
     backup_protect_mode: Literal["gzip", "oracle", "zip"] = "gzip"
     backup_protect_pass: str = ""
@@ -224,6 +229,14 @@ class InstanceSettings(BaseModel):
     rman_channels: int = Field(default=2, ge=1, le=4)
     rman_compression: bool = True
     rman_schedules: list[RmanScheduleRule] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_ftp_upload_enabled(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "ftp_upload_enabled" not in data:
+            ip = str(data.get("localftpip", "")).strip()
+            data["ftp_upload_enabled"] = ip not in _FTP_PLACEHOLDER_IPS
+        return data
 
     @field_validator("backup_protect_mode")
     @classmethod

@@ -38,6 +38,46 @@
     });
   });
 
+  function syncFtpUploadFields(instanceId) {
+    const form = document.getElementById('instance-form-' + instanceId);
+    if (!form) return;
+    const ftpToggle = form.querySelector('.ftp-upload-toggle');
+    const ftpOn = ftpToggle ? ftpToggle.checked : false;
+    const instToggle = form.querySelector('[name="enabled"]');
+    const instOn = instToggle ? instToggle.checked : true;
+    const requireFtp = ftpOn && instOn;
+    const wrap = document.getElementById('ftp-fields-' + instanceId);
+    if (!wrap) return;
+    wrap.dataset.ftpDisabled = ftpOn ? '' : '1';
+    wrap.querySelectorAll('input[name^="localftp"]').forEach(function (input) {
+      input.disabled = !ftpOn;
+      if (!requireFtp) {
+        input.required = false;
+        return;
+      }
+      if (input.name === 'localftppass') {
+        input.required = input.dataset.hasPass !== '1';
+      } else {
+        input.required = true;
+      }
+    });
+  }
+
+  document.querySelectorAll('.ftp-upload-toggle').forEach(function (toggle) {
+    const instanceId = toggle.dataset.instanceId;
+    syncFtpUploadFields(instanceId);
+    toggle.addEventListener('change', function () {
+      syncFtpUploadFields(instanceId);
+    });
+    const form = document.getElementById('instance-form-' + instanceId);
+    const instToggle = form && form.querySelector('[name="enabled"]');
+    if (instToggle) {
+      instToggle.addEventListener('change', function () {
+        syncFtpUploadFields(instanceId);
+      });
+    }
+  });
+
   const modal = document.getElementById('schedule-modal');
   const form = document.getElementById('schedule-form');
   const title = document.getElementById('schedule-modal-title');

@@ -221,11 +221,24 @@
                   data-instance-name="{{ inst.display_name }}"
                 >FTP Tarayici</button>
               </div>
-              <label>Uzak FTP IP <input type="text" name="localftpip" value="{{ inst.localftpip }}" placeholder="ornek: 10.0.0.50" {% if inst.enabled %}required{% endif %}></label>
-              <label>Uzak FTP Kullanici <input type="text" name="localftpuser" value="{{ inst.localftpuser }}" {% if inst.enabled %}required{% endif %}></label>
-              <label>Uzak FTP Sifre <input type="password" name="localftppass" placeholder="Mevcut: {{ inst.masked_ftp_pass }}" {% if inst.enabled and not inst.masked_ftp_pass %}required{% endif %}></label>
+              <label class="checkbox-row full">
+                <input
+                  type="checkbox"
+                  name="ftp_upload_enabled"
+                  value="1"
+                  class="ftp-upload-toggle"
+                  data-instance-id="{{ inst.id }}"
+                  {% if inst.ftp_upload_enabled %}checked{% endif %}
+                >
+                Uzak FTP yuklemesi aktif (kapaliysa yedek yalnizca yerelde kalir)
+              </label>
+              <div class="ftp-config-fields full" id="ftp-fields-{{ inst.id }}" {% if not inst.ftp_upload_enabled %}data-ftp-disabled="1"{% endif %}>
+              <label>Uzak FTP IP <input type="text" name="localftpip" value="{{ inst.localftpip }}" placeholder="ornek: 10.0.0.50" {% if inst.enabled and inst.ftp_upload_enabled %}required{% endif %}></label>
+              <label>Uzak FTP Kullanici <input type="text" name="localftpuser" value="{{ inst.localftpuser }}" {% if inst.enabled and inst.ftp_upload_enabled %}required{% endif %}></label>
+              <label>Uzak FTP Sifre <input type="password" name="localftppass" data-has-pass="{% if inst.masked_ftp_pass %}1{% else %}0{% endif %}" placeholder="Mevcut: {{ inst.masked_ftp_pass }}" {% if inst.enabled and inst.ftp_upload_enabled and not inst.masked_ftp_pass %}required{% endif %}></label>
               <label class="full">Uzak FTP Dizin <input type="text" name="localftpdir" value="{{ inst.localftpdir if inst.localftpdir and inst.localftpdir != '/' else '' }}" placeholder="/yedek veya /"></label>
               <p class="form-hint full">Sunucudaki hedef klasor. Varsayilan <strong>/</strong> (kok dizin).</p>
+              </div>
               <label>Saklama (gun) <input type="number" min="1" max="365" name="retention_days" value="{{ inst.retention_days if inst.retention_days > 0 else 2 }}" {% if inst.enabled %}required{% endif %}></label>
             </div>
             <div class="form-actions instance-form-actions">

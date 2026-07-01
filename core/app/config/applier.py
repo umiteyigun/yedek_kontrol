@@ -62,6 +62,7 @@ def _render_instance_shell(inst: InstanceSettings, settings: YedekSettings) -> s
         f"localftpuser={shlex.quote(ftp_user)}",
         f"localftppass={shlex.quote(ftp_pass)}",
         f'localftpdir={shlex.quote(inst.localftpdir or "/")}',
+        f'ftp_upload_enabled={1 if inst.ftp_upload_enabled else 0}',
         f'mail_notify={1 if settings.mail_notify else 0}',
         f"backup_protect_mode={shlex.quote(inst.backup_protect_mode)}",
         f"backup_protect_pass={shlex.quote(inst.backup_protect_pass)}",

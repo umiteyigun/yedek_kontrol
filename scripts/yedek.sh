@@ -307,8 +307,15 @@ SELECT username, expiry_date FROM dba_users
 EXIT;
 EOF
 
-  log "FTP yukleniyor [${INSTANCE_ID}]: ${localftpip}:${localftpdir:-/} -> ${uploaddosyaadi}"
-  upload_backup_artifact "$artifact_path" "$uploaddosyaadi"
+  if [[ "${ftp_upload_enabled:-0}" == "1" ]]; then
+    log "FTP yukleniyor [${INSTANCE_ID}]: ${localftpip}:${localftpdir:-/} -> ${uploaddosyaadi}"
+    upload_backup_artifact "$artifact_path" "$uploaddosyaadi"
+  else
+    localftpstat=""
+    filesize=$(stat -c%s "$artifact_path" 2>/dev/null || stat -f%z "$artifact_path" 2>/dev/null || echo "-1")
+    upload_dosyaadi="$uploaddosyaadi"
+    log "FTP atlandi (pasif) [${INSTANCE_ID}]: ${uploaddosyaadi}"
+  fi
   gzipdosyaadi="${upload_dosyaadi:-$uploaddosyaadi}"
 
   notify_backup
