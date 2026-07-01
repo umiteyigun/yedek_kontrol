@@ -9,6 +9,46 @@
   const localBlock = document.getElementById("local-users-block");
   const boot = document.getElementById("sistem-clock-boot");
   const assetBase = window.yedekAssetBase ? window.yedekAssetBase() : "";
+  const presetsEl = document.getElementById("role-perm-presets");
+
+  let rolePresets = {};
+  if (presetsEl && presetsEl.textContent) {
+    try {
+      rolePresets = JSON.parse(presetsEl.textContent);
+    } catch (_err) {
+      rolePresets = {};
+    }
+  }
+
+  function applyRoleToMatrix(container, role) {
+    if (!container || !rolePresets[role]) return;
+    const preset = rolePresets[role];
+    container.querySelectorAll(".perm-box").forEach(function (box) {
+      const mod = box.dataset.module;
+      const action = box.dataset.action;
+      const allowed = preset[mod] && preset[mod][action];
+      box.checked = !!allowed;
+    });
+  }
+
+  function bindRoleSelect(select, formRoot) {
+    if (!select || !formRoot) return;
+    select.addEventListener("change", function () {
+      applyRoleToMatrix(formRoot, select.value);
+    });
+  }
+
+  const addForm = document.getElementById("local-user-add-form");
+  const addRole = document.getElementById("local-add-role");
+  if (addForm && addRole) {
+    bindRoleSelect(addRole, addForm);
+    applyRoleToMatrix(addForm, addRole.value);
+  }
+
+  document.querySelectorAll(".local-user-edit-form").forEach(function (editForm) {
+    const roleSelect = editForm.querySelector(".local-edit-role");
+    bindRoleSelect(roleSelect, editForm);
+  });
 
   function syncVisibility() {
     const mode = authMode ? authMode.value : "ldap_and_local";

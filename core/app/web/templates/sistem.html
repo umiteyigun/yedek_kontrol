@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_permission_matrix.html" import permission_matrix %}
 {% block title %}Sistem Ayarlari — Yedek Panel{% endblock %}
 {% block extra_head %}
 <link rel="stylesheet" href="/static/dashboard.css">
@@ -57,7 +58,11 @@
           </label>
         </div>
         <div class="form-actions instance-form-actions">
+          {% if can_system_edit %}
           <button type="submit" class="btn-glow btn-sm">Host'a Uygula</button>
+          {% else %}
+          <span class="form-hint muted">Saat duzenleme yetkiniz yok.</span>
+          {% endif %}
         </div>
       </form>
     </section>
@@ -133,7 +138,9 @@
       </fieldset>
 
       <div class="form-actions instance-form-actions">
+        {% if can_system_edit %}
         <button type="submit" class="btn-glow btn-sm">Kimlik Ayarlarini Kaydet</button>
+        {% endif %}
       </div>
     </form>
 
@@ -144,7 +151,8 @@
         <strong>LDAP + yerel</strong> modunda giris yapilir.
       </p>
 
-      <form method="post" action="/sistem/yerel/ekle" class="local-user-add-form">
+      {% if can_system_add %}
+      <form method="post" action="/sistem/yerel/ekle" class="local-user-add-form" id="local-user-add-form">
         <div class="form-grid">
           <label>Kullanici adi
             <input type="text" name="username" required pattern="[a-zA-Z0-9._-]{3,32}" autocomplete="off" placeholder="ornek: yedek.op">
@@ -152,17 +160,19 @@
           <label>Sifre
             <input type="password" name="password" required minlength="6" autocomplete="new-password">
           </label>
-          <label>Rol
-            <select name="role">
+          <label>Rol (varsayilan izinler)
+            <select name="role" id="local-add-role">
               <option value="limited">Sinirli (yedek operatoru)</option>
               <option value="full">Tam yetki (admins)</option>
             </select>
           </label>
         </div>
+        {{ permission_matrix() }}
         <div class="form-actions instance-form-actions">
           <button type="submit" class="btn-glow btn-sm">Kullanici Ekle</button>
         </div>
       </form>
+      {% endif %}
 
       {% if local_users %}
       <div class="table-wrap local-users-table">
@@ -184,11 +194,12 @@
               <td>{% if row.enabled %}<span class="status-pill ok"><span class="pulse"></span>Aktif</span>{% else %}Pasif{% endif %}</td>
               <td class="muted">{{ row.created_at[:19] if row.created_at else '—' }}</td>
               <td class="row-actions">
+                {% if can_system_edit %}
                 <details class="inline-details">
                   <summary class="btn-ghost btn-sm">Duzenle</summary>
                   <form method="post" action="/sistem/yerel/{{ row.username }}/guncelle" class="local-user-edit-form">
                     <label>Rol
-                      <select name="role">
+                      <select name="role" class="local-edit-role">
                         <option value="limited" {% if row.role != 'full' %}selected{% endif %}>Sinirli</option>
                         <option value="full" {% if row.role == 'full' %}selected{% endif %}>Tam yetki</option>
                       </select>
@@ -200,12 +211,16 @@
                     <label>Yeni sifre (bos = degismez)
                       <input type="password" name="password" autocomplete="new-password">
                     </label>
+                    {{ permission_matrix(row.permissions) }}
                     <button type="submit" class="btn-ghost btn-sm">Kaydet</button>
                   </form>
                 </details>
+                {% endif %}
+                {% if can_system_delete %}
                 <form method="post" action="/sistem/yerel/{{ row.username }}/sil" class="inline-form" onsubmit="return confirm('{{ row.username }} silinsin mi?');">
                   <button type="submit" class="btn-danger btn-sm">Sil</button>
                 </form>
+                {% endif %}
               </td>
             </tr>
             {% endfor %}
@@ -224,5 +239,6 @@
 <div id="sistem-clock-boot" hidden
   data-date="{{ host_clock.clock_date|e }}"
   data-time="{{ host_clock.clock_time|e }}"></div>
+<script type="application/json" id="role-perm-presets">{{ role_perm_presets_json|safe }}</script>
 <script src="{{ static_url('/static/sistem-page.js', request) }}" defer></script>
 {% endblock %}

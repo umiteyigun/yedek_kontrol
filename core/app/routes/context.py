@@ -10,6 +10,7 @@ from app.config.models import InstanceSettings, YedekSettings
 from app.config.store import mask_secret
 from app.services import backups as backup_service
 from app.services.oracle_probe import instance_runtime_map
+from app.services.permissions import get_request_permissions, nav_flags
 from app.services.server_info import collect_all_instance_oracle_stats, get_server_info
 from app.services.server_time import list_host_timezones, merge_clock_into_server_info
 
@@ -160,13 +161,17 @@ def page_context(
     server_info = get_server_info(settings, active, oracle_stats_map=oracle_stats_map)
     server_info = merge_clock_into_server_info(server_info)
     is_admin = can_manage_settings(request)
+    perms = get_request_permissions(request)
+    flags = nav_flags(request)
 
     return {
         "request": request,
         "user": get_current_user(request),
         "role": role,
+        "perms": perms,
         "can_settings": is_admin,
         "can_admin": is_admin,
+        **flags,
         "role_label": "Tam Yetki" if role == "full" else "Yedek Operatoru",
         "settings": settings.model_dump(),
         "active_instance": active_view,

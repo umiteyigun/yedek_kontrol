@@ -13,7 +13,7 @@ from app.auth import (
     TERMINAL_SESSION_COOKIE,
     attach_central_session_cookie,
     authenticate,
-    can_manage_settings,
+    can,
     cookie_kwargs,
     cookie_kwargs_for_request,
     create_panel_session,
@@ -21,8 +21,8 @@ from app.auth import (
     get_session,
     is_login_rate_limited,
     login_redirect,
+    permission_denied_redirect,
     revoke_panel_session,
-    settings_denied_redirect,
 )
 from app.services.central_proxy_auth import is_central_proxy_request, resolve_central_proxy_user
 from app.config.constants import ORACLE_DIRECTORY_NAME
@@ -383,8 +383,8 @@ def dashboard(request: Request):
 def settings_page(request: Request):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "settings", "view"):
+        return permission_denied_redirect("settings")
     settings = request.app.state.store.get()
     merged, probes, probe_errors = _merge_oracle_probes(settings.model_dump())
     display_settings = YedekSettings.model_validate(merged)
@@ -405,8 +405,8 @@ def settings_page(request: Request):
 async def settings_oracle_sync(request: Request):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "settings", "edit"):
+        return permission_denied_redirect("settings")
 
     store = request.app.state.store
     current = store.get()
@@ -440,8 +440,8 @@ async def settings_oracle_sync(request: Request):
 async def settings_oracle_discover(request: Request):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "settings", "edit"):
+        return permission_denied_redirect("settings")
 
     store = request.app.state.store
     current = store.get()
@@ -471,7 +471,7 @@ async def settings_oracle_discover(request: Request):
 async def settings_ftp_browse(request: Request, instance_id: str):
     if not get_current_user(request):
         return JSONResponse({"ok": False, "error": "Oturum gerekli"}, status_code=401)
-    if not can_manage_settings(request):
+    if not can(request, "settings", "view"):
         return JSONResponse({"ok": False, "error": "Ayar yetkisi gerekli"}, status_code=403)
 
     store = request.app.state.store
@@ -512,7 +512,7 @@ async def settings_ftp_browse(request: Request, instance_id: str):
 async def settings_schemas_list(request: Request, instance_id: str):
     if not get_current_user(request):
         return JSONResponse({"ok": False, "error": "Oturum gerekli"}, status_code=401)
-    if not can_manage_settings(request):
+    if not can(request, "settings", "view"):
         return JSONResponse({"ok": False, "error": "Ayar yetkisi gerekli"}, status_code=403)
 
     store = request.app.state.store
@@ -540,8 +540,8 @@ async def settings_schemas_list(request: Request, instance_id: str):
 async def settings_ftp_delete(request: Request, instance_id: str):
     if not get_current_user(request):
         return JSONResponse({"ok": False, "error": "Oturum gerekli"}, status_code=401)
-    if not can_manage_settings(request):
-        return JSONResponse({"ok": False, "error": "Ayar yetkisi gerekli"}, status_code=403)
+    if not can(request, "settings", "delete"):
+        return JSONResponse({"ok": False, "error": "Silme yetkisi gerekli"}, status_code=403)
 
     store = request.app.state.store
     current = store.get()
@@ -585,8 +585,8 @@ async def settings_ftp_delete(request: Request, instance_id: str):
 async def settings_save_instance(request: Request, instance_id: str):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "settings", "edit"):
+        return permission_denied_redirect("settings")
 
     store = request.app.state.store
     current = store.get()
@@ -626,8 +626,8 @@ async def settings_save_instance(request: Request, instance_id: str):
 async def settings_save_global(request: Request):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "settings", "edit"):
+        return permission_denied_redirect("settings")
 
     store = request.app.state.store
     current = store.get()
@@ -656,8 +656,8 @@ async def settings_save(request: Request):
     """Geriye uyumluluk: tum formu tek seferde kaydetmek yerine yonlendir."""
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "settings", "edit"):
+        return permission_denied_redirect("settings")
     return RedirectResponse(
         url="/ayarlar?error=Ayarlar+sekme+sekme+kaydedilir.+Her+sekmedeki+Kaydet+dugmesini+kullanin",
         status_code=303,
@@ -668,8 +668,8 @@ async def settings_save(request: Request):
 async def settings_add_instance(request: Request):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "settings", "add"):
+        return permission_denied_redirect("settings")
 
     form = await request.form()
     hastane = str(form.get("new_hastane", "")).strip()
@@ -730,8 +730,8 @@ async def settings_add_instance(request: Request):
 async def settings_delete_instance(request: Request, instance_id: str):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "settings", "delete"):
+        return permission_denied_redirect("settings")
 
     store = request.app.state.store
     current = store.get()
@@ -751,8 +751,8 @@ async def settings_delete_instance(request: Request, instance_id: str):
 async def schedule_add(request: Request, instance_id: str):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "settings", "edit"):
+        return permission_denied_redirect("settings")
 
     store = request.app.state.store
     current = store.get()
@@ -787,8 +787,8 @@ async def schedule_add(request: Request, instance_id: str):
 async def schedule_edit(request: Request, instance_id: str, rule_id: str):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "settings", "edit"):
+        return permission_denied_redirect("settings")
 
     store = request.app.state.store
     current = store.get()
@@ -824,8 +824,8 @@ async def schedule_edit(request: Request, instance_id: str, rule_id: str):
 async def schedule_delete(request: Request, instance_id: str, rule_id: str):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "settings", "delete"):
+        return permission_denied_redirect("settings")
 
     store = request.app.state.store
     current = store.get()

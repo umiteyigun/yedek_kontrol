@@ -20,6 +20,7 @@
         </p>
       </div>
       <div class="page-hero-actions">
+        {% if can_backup_add %}
         <form method="post" action="/yedekler/baslat" class="inline-form">
           <input type="hidden" name="tip" value="GUNLUK">
           <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
@@ -30,6 +31,7 @@
           <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
           <button type="submit" class="btn-ghost" {% if status.state == 'running' %}disabled{% endif %}>Haftalik</button>
         </form>
+        {% endif %}
         <a href="/" class="btn-ghost btn-sm">Duruma Don</a>
       </div>
     </header>
@@ -76,14 +78,14 @@
     {% elif status.state == 'done' %}
     <div class="status-banner done panel-3d reveal reveal-d2">
       Son yedek tamamlandi: <strong>{{ status.updated_at }}</strong>
-      {% if can_settings and status.log_file %}
+      {% if can_backup_delete and status.log_file %}
       — <button type="button" class="btn-log-view btn-ghost btn-sm" data-log-source="panel" data-log-name="{{ status.log_file }}">Log</button>
       {% endif %}
     </div>
     {% elif status.state == 'failed' %}
     <div class="status-banner failed panel-3d reveal reveal-d2">
       Son yedek basarisiz (cikis: {{ status.exit_code }}).
-      {% if can_settings and status.log_file %}
+      {% if can_backup_delete and status.log_file %}
       <button type="button" class="btn-log-view" data-log-source="panel" data-log-name="{{ status.log_file }}">Logu ac</button>
       {% endif %}
     </div>
@@ -102,6 +104,7 @@
       {% if backups %}
       <form method="post" action="/yedekler/ftp-gonder" id="ftp-resend-form">
         <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
+        {% if can_backup_edit %}
         <div class="backup-bulk-bar">
           <label class="backup-select-all">
             <input type="checkbox" id="backup-select-all" aria-label="Tumunu sec">
@@ -115,6 +118,7 @@
           >FTP'ye Tekrar Gonder</button>
           <span class="muted backup-selected-count" id="backup-selected-count">0 secili</span>
         </div>
+        {% endif %}
 
         <div class="data-table-wrap">
           <table class="data-table backup-table">
@@ -144,12 +148,12 @@
                 <td>{{ item.mtime }}</td>
                 <td>
                   <div class="row-actions">
-                    {% if can_settings and item.has_log %}
+                    {% if can_backup_delete and item.has_log %}
                     <button type="button" class="btn-ghost btn-sm btn-log-view" data-log-source="expdp" data-log-name="{{ item.log_name }}" data-log-instance="{{ active_instance_id }}">Log</button>
-                    {% elif can_settings %}
+                    {% elif can_backup_delete %}
                     <span class="muted" style="font-size:0.8rem;">Log yok</span>
                     {% endif %}
-                    {% if can_settings %}
+                    {% if can_backup_delete %}
                     <button
                       type="submit"
                       class="btn-danger btn-sm"
@@ -166,7 +170,7 @@
         </div>
       </form>
       {% for item in backups %}
-      {% if can_settings %}
+      {% if can_backup_delete %}
       <form
         method="post"
         action="/yedekler/sil"
@@ -183,7 +187,7 @@
       <div class="empty-state">
         <div class="empty-icon" aria-hidden="true"></div>
         <p>Bu instance icin henuz yedek yok.</p>
-        {% if can_settings %}<a href="/ayarlar" class="btn-glow">Ayarlara Git</a>{% endif %}
+        {% if can_view_settings %}<a href="/ayarlar" class="btn-glow">Ayarlara Git</a>{% endif %}
       </div>
       {% endif %}
     </section>

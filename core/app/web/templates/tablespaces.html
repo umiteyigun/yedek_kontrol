@@ -136,7 +136,9 @@
               <span class="panel-meta" id="ts-df-count">{% if view_mode == 'datafiles' and datafiles %}{{ datafiles|length }} datafile{% else %}—{% endif %}</span>
             </div>
             {% if view_mode == 'datafiles' and selected_tablespace %}
+            {% if can_tablespaces_add %}
             <button type="button" class="btn-glow btn-sm" id="ts-add-df-btn">+ Datafile Ekle</button>
+            {% endif %}
             {% endif %}
           </div>
           <div class="ts-table-wrap" id="ts-df-wrap">

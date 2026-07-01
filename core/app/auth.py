@@ -13,6 +13,7 @@ from starlette.requests import Request
 from app.config.ldap_config import ROLE_FULL
 from app.services.ldap_auth import ldap_login
 from app.services.central_proxy_auth import resolve_central_proxy_user
+from app.services.permissions import can as perm_can, get_request_permissions, has_permission
 from app.services.session_store import (
     PANEL_SESSION_TTL,
     TERMINAL_SESSION_TTL,
@@ -286,8 +287,32 @@ def get_current_role(request: Request) -> Optional[str]:
     return session.get("role") if session else None
 
 
+def can(request: Request, module: str, action: str) -> bool:
+    return perm_can(request, module, action)
+
+
+def get_permissions(request: Request) -> dict[str, dict[str, bool]]:
+    return get_request_permissions(request)
+
+
 def can_manage_settings(request: Request) -> bool:
-    return get_current_role(request) == ROLE_FULL
+    """Geriye uyumluluk: ayarlar veya sistem modulu goruntuleme."""
+    perms = get_request_permissions(request)
+    return has_permission(perms, "settings", "view") or has_permission(perms, "system", "view")
+
+
+def can_terminal_access(request: Request) -> bool:
+    return can(request, "terminal", "view")
+
+
+def is_full_access_session(session: dict[str, Any] | None) -> bool:
+    if not session:
+        return False
+    auth = str(session.get("auth") or "")
+    role = str(session.get("role") or "")
+    if auth in ("master", "central", "ldap"):
+        return role == ROLE_FULL
+    return role == ROLE_FULL
 
 
 def require_login(request: Request) -> dict[str, Any]:
@@ -323,16 +348,18 @@ def login_redirect(request: Request | None = None) -> RedirectResponse:
 
 
 def settings_denied_redirect() -> RedirectResponse:
-    return RedirectResponse(url="/?error=Admin+yetkisi+gerekli+(admins+grubu)", status_code=303)
+    return RedirectResponse(url="/?error=Bu+islem+icin+yetkiniz+yok", status_code=303)
 
 
 def terminal_denied_redirect() -> RedirectResponse:
-    return RedirectResponse(url="/?error=Admin+yetkisi+gerekli+(admins+grubu)", status_code=303)
+    return RedirectResponse(url="/?error=Terminal+icin+yetkiniz+yok", status_code=303)
+
+
+def permission_denied_redirect(module: str = "") -> RedirectResponse:
+    suffix = f"+({module})" if module else ""
+    return RedirectResponse(url=f"/?error=Bu+islem+icin+yetkiniz+yok{suffix}", status_code=303)
 
 
 def session_from_token(request: Request, token: str | None) -> Optional[dict[str, Any]]:
     return resolve_panel_session(request, token)
 
-
-def is_full_access_session(session: dict[str, Any] | None) -> bool:
-    return bool(session and session.get("role") == ROLE_FULL)

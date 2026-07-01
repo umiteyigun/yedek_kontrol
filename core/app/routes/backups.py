@@ -4,7 +4,7 @@ from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from app.web.templates_env import templates
 
-from app.auth import can_manage_settings, get_current_user, login_redirect, settings_denied_redirect
+from app.auth import can, get_current_user, login_redirect, permission_denied_redirect
 from app.routes.context import page_context
 from app.services import backups as backup_service
 from app.services import rman_backups as rman_service
@@ -23,7 +23,7 @@ def log_content_api(
 ):
     if not get_current_user(request):
         return JSONResponse({"ok": False, "error": "Oturum gerekli"}, status_code=401)
-    if not can_manage_settings(request):
+    if not can(request, "backups", "delete"):
         return JSONResponse({"ok": False, "error": "Log goruntuleme icin yetki gerekli"}, status_code=403)
 
     settings = request.app.state.store.get()
@@ -52,6 +52,8 @@ def log_content_api(
 def backups_page(request: Request):
     if not get_current_user(request):
         return login_redirect()
+    if not can(request, "backups", "view"):
+        return permission_denied_redirect("backups")
 
     store = request.app.state.store
     settings = store.get()
@@ -87,6 +89,8 @@ def start_backup(
 ):
     if not get_current_user(request):
         return login_redirect()
+    if not can(request, "backups", "add"):
+        return permission_denied_redirect("backups")
 
     settings = request.app.state.store.get()
     yedek_dir = Path(request.app.state.yedek_dir)
@@ -116,8 +120,8 @@ def start_backup(
 def view_log(request: Request, name: str):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return RedirectResponse(url="/yedekler?error=Log+goruntuleme+icin+admins+yetkisi+gerekli", status_code=303)
+    if not can(request, "backups", "delete"):
+        return RedirectResponse(url="/yedekler?error=Log+goruntuleme+icin+yetki+gerekli", status_code=303)
 
     settings = request.app.state.store.get()
     active = settings.get_instance(request.query_params.get("instance")) or settings.first_instance()
@@ -142,8 +146,8 @@ def delete_backup(
 ):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "backups", "delete"):
+        return permission_denied_redirect("backups")
 
     settings = request.app.state.store.get()
     active = settings.get_instance(instance_id) or settings.first_instance()
@@ -166,6 +170,8 @@ def resend_ftp(
 ):
     if not get_current_user(request):
         return login_redirect()
+    if not can(request, "backups", "edit"):
+        return permission_denied_redirect("backups")
 
     settings = request.app.state.store.get()
     active = settings.get_instance(instance_id) or settings.first_instance()

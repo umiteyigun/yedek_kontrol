@@ -7,12 +7,11 @@ from app.web.templates_env import templates
 from app.auth import (
     TERMINAL_SESSION_COOKIE,
     TERMINAL_SESSION_MAX_AGE,
-    can_manage_settings,
+    can_terminal_access,
     cookie_kwargs,
     create_terminal_session,
     get_current_user,
     get_session,
-    is_full_access_session,
     login_redirect,
     terminal_denied_redirect,
 )
@@ -26,11 +25,11 @@ def terminal_page(request: Request):
     user = get_current_user(request)
     if not user:
         return login_redirect()
-    if not can_manage_settings(request):
+    if not can_terminal_access(request):
         return terminal_denied_redirect()
 
     panel_session = get_session(request)
-    if not is_full_access_session(panel_session):
+    if not panel_session:
         return terminal_denied_redirect()
 
     terminal_token = create_terminal_session(request, panel_session)

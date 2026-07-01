@@ -20,6 +20,7 @@
         </p>
       </div>
       <div class="page-hero-actions">
+        {% if can_rman_add %}
         <form method="post" action="/rman/baslat" class="inline-form rman-start-form" data-cold="{{ '1' if rman_needs_cold_backup else '0' }}" data-tip="RMAN_INCR">
           <input type="hidden" name="tip" value="RMAN_INCR">
           <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
@@ -30,6 +31,7 @@
           <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
           <button type="submit" class="btn-ghost" {% if rman_status.state == 'running' or not active_rman.rman_enabled %}disabled{% endif %}>Manuel Full</button>
         </form>
+        {% endif %}
         <a href="/yedekler?instance={{ active_instance_id }}" class="btn-ghost btn-sm">Expdp Yedekler</a>
       </div>
     </header>
@@ -88,14 +90,14 @@
     {% elif rman_status.state == 'done' %}
     <div class="status-banner done panel-3d reveal reveal-d2">
       Son RMAN yedegi tamamlandi: <strong>{{ rman_status.updated_at }}</strong>
-      {% if can_settings and rman_status.log_file %}
+      {% if can_rman_delete and rman_status.log_file %}
       — <button type="button" class="btn-log-view btn-ghost btn-sm" data-log-source="panel" data-log-name="{{ rman_status.log_file }}">Panel logu</button>
       {% endif %}
     </div>
     {% elif rman_status.state == 'failed' %}
     <div class="status-banner failed panel-3d reveal reveal-d2">
       RMAN yedegi basarisiz (exit {{ rman_status.exit_code }}).
-      {% if can_settings and rman_status.log_file %}
+      {% if can_rman_delete and rman_status.log_file %}
       <button type="button" class="btn-log-view" data-log-source="panel" data-log-name="{{ rman_status.log_file }}">Logu ac</button>
       {% endif %}
     </div>
@@ -105,7 +107,7 @@
     </div>
     {% endif %}
 
-    {% if can_settings %}
+    {% if can_rman_edit %}
     <section class="panel-3d reveal reveal-d2 rman-settings-section">
       <h2 class="section-title">RMAN Ayarlari</h2>
       <form method="post" action="/rman/kaydet" class="rman-settings-form">
@@ -163,7 +165,7 @@
               <th>Plan</th>
               <th>Etiket</th>
               <th>Durum</th>
-              {% if can_settings %}<th></th>{% endif %}
+              {% if can_rman_edit %}<th></th>{% endif %}
             </tr>
           </thead>
           <tbody>
@@ -173,7 +175,7 @@
               <td>{{ rule.summary }}</td>
               <td>{{ rule.label or '—' }}</td>
               <td>{% if rule.enabled %}Aktif{% else %}Pasif{% endif %}</td>
-              {% if can_settings %}
+              {% if can_rman_delete %}
               <td>
                 <form method="post" action="/rman/zamanlama/sil" class="inline-form">
                   <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
@@ -256,10 +258,10 @@
               <td>{{ row.piece_count }}</td>
               <td>{{ row.size_mb }} MB</td>
               <td class="row-actions">
-                {% if row.log_name and can_settings %}
+                {% if row.log_name and can_rman_delete %}
                 <button type="button" class="btn-ghost btn-sm btn-log-view" data-log-source="rman" data-log-name="{{ row.run_id }}" data-log-instance="{{ active_instance_id }}">Log</button>
                 {% endif %}
-                {% if can_settings %}
+                {% if can_rman_delete %}
                 <form method="post" action="/rman/sil" class="inline-form"
                   onsubmit="return confirm('Bu RMAN yedek klasoru silinsin mi?');">
                   <input type="hidden" name="run_id" value="{{ row.run_id }}">

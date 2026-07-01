@@ -27,7 +27,7 @@
         {{ 'Sistem saglikli' if health_ok else 'Disk uyari' }}
       </div>
       <a href="/yedekler{% if active_instance_id %}?instance={{ active_instance_id }}{% endif %}" class="btn-glow">Yedekleri Yonet</a>
-      {% if can_settings %}<a href="/ayarlar" class="btn-ghost">Ayarlar</a>{% endif %}
+      {% if can_view_settings %}<a href="/ayarlar" class="btn-ghost">Ayarlar</a>{% endif %}
     </div>
   </header>
 
@@ -59,7 +59,7 @@
             <span class="clock-bar-ntp" id="server-ntp-status">NTP: {{ 'aktif' if server_info.ntp_synchronized in ('yes', '1', 'true') else 'kapali' }}</span>
             {% endif %}
           </div>
-          {% if can_admin %}
+          {% if can_system_edit %}
           <button type="button" class="btn-ghost btn-sm clock-bar-edit-btn" id="clock-edit-toggle">Duzenle</button>
           {% endif %}
         </div>
@@ -361,7 +361,7 @@
   </div>
 </div>
 
-{% if can_admin %}
+{% if can_system_edit %}
 <dialog id="clock-edit-modal" class="schedule-modal clock-edit-modal">
   <form method="post" action="/sistem/saat" class="schedule-modal-form clock-edit-form">
     <input type="hidden" name="return_to" value="/">

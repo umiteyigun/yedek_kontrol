@@ -8,6 +8,8 @@ from pathlib import Path
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
+from app.auth import can as auth_can
+
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 _PROXY_PREFIX_RE = re.compile(
     r"^/o/[a-z0-9][a-z0-9_-]*/n/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
@@ -46,3 +48,4 @@ templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 templates.env.globals["panel_url"] = panel_url
 templates.env.globals["static_url"] = static_url
 templates.env.globals["proxy_prefix_for"] = proxy_prefix_for
+templates.env.globals["can_perm"] = auth_can

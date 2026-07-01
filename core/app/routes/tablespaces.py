@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from app.auth import can_manage_settings, get_current_user, login_redirect, settings_denied_redirect
+from app.auth import can, get_current_user, login_redirect, permission_denied_redirect
 from app.routes.context import active_instance, page_context
 from app.services.oracle_probe import is_instance_running
 from app.services.oracle_tablespaces import (
@@ -45,8 +45,8 @@ def _resolve_instance(request: Request):
 def tablespace_page(request: Request):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "tablespaces", "view"):
+        return permission_denied_redirect("tablespaces")
 
     settings, inst = _resolve_instance(request)
     ctx = page_context(request, settings)
@@ -85,7 +85,7 @@ def tablespace_page(request: Request):
 def api_tablespaces(request: Request):
     if not get_current_user(request):
         return JSONResponse({"ok": False, "error": "auth"}, status_code=401)
-    if not can_manage_settings(request):
+    if not can(request, "tablespaces", "view"):
         return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
 
     _, inst = _resolve_instance(request)
@@ -105,7 +105,7 @@ def api_tablespaces(request: Request):
 def api_datafiles(tablespace: str, request: Request):
     if not get_current_user(request):
         return JSONResponse({"ok": False, "error": "auth"}, status_code=401)
-    if not can_manage_settings(request):
+    if not can(request, "tablespaces", "view"):
         return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
 
     _, inst = _resolve_instance(request)
@@ -125,7 +125,7 @@ def api_datafiles(tablespace: str, request: Request):
 def api_datafile_suggest(tablespace: str, request: Request):
     if not get_current_user(request):
         return JSONResponse({"ok": False, "error": "auth"}, status_code=401)
-    if not can_manage_settings(request):
+    if not can(request, "tablespaces", "view"):
         return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
 
     _, inst = _resolve_instance(request)
@@ -141,7 +141,7 @@ def api_datafile_suggest(tablespace: str, request: Request):
 async def api_add_datafile(tablespace: str, request: Request, body: AddDatafileBody):
     if not get_current_user(request):
         return JSONResponse({"ok": False, "error": "auth"}, status_code=401)
-    if not can_manage_settings(request):
+    if not can(request, "tablespaces", "add"):
         return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
 
     _, inst = _resolve_instance(request)

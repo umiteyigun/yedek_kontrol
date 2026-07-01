@@ -22,7 +22,6 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.auth import (
     TERMINAL_SESSION_COOKIE,
-    is_full_access_session,
     resolve_terminal_session,
 )
 from app.config.ldap_config import ROLE_FULL
@@ -30,6 +29,7 @@ from app.services.central_proxy_auth import (
     is_central_proxy_headers,
     resolve_central_proxy_headers,
 )
+from app.services.permissions import has_permission, resolve_permissions
 
 logger = logging.getLogger(__name__)
 
@@ -312,11 +312,19 @@ def authorize_terminal_ws(websocket: WebSocket) -> TerminalAuth | None:
         ip=_client_ip(websocket),
         user_agent=websocket.headers.get("user-agent"),
     )
-    if is_full_access_session(session):
-        user = str(session.get("user") or "")
-        role = str(session.get("role") or "")
-        if role == ROLE_FULL and user:
-            return TerminalAuth(user=user, role=role, client_ip=_client_ip(websocket))
+    if session:
+        local_store = getattr(websocket.app.state, "local_user_store", None)
+        perms = resolve_permissions(
+            auth_method=str(session.get("auth") or ""),
+            role=str(session.get("role") or ""),
+            username=str(session.get("user") or ""),
+            local_user_store=local_store,
+        )
+        if has_permission(perms, "terminal", "view"):
+            user = str(session.get("user") or "")
+            role = str(session.get("role") or "")
+            if user:
+                return TerminalAuth(user=user, role=role, client_ip=_client_ip(websocket))
 
     proxy_user = resolve_central_proxy_headers(websocket.headers)
     if proxy_user and str(proxy_user.get("panel_role") or "") == ROLE_FULL:

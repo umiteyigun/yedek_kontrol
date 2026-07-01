@@ -7,7 +7,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from app.web.templates_env import templates
 
-from app.auth import can_manage_settings, get_current_user, login_redirect, settings_denied_redirect
+from app.auth import can, get_current_user, login_redirect, permission_denied_redirect
 from app.config.models import RmanScheduleRule, WEEKDAY_LABELS, YedekSettings, slugify
 from app.routes.context import page_context
 from app.services import backups as backup_service
@@ -104,8 +104,8 @@ def _rman_context(request: Request, settings: YedekSettings, message: str = "", 
 def rman_page(request: Request):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "rman", "view"):
+        return permission_denied_redirect("rman")
 
     store = request.app.state.store
     settings = store.get()
@@ -129,8 +129,8 @@ def rman_page(request: Request):
 async def rman_save_settings(request: Request):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "rman", "edit"):
+        return permission_denied_redirect("rman")
 
     store = request.app.state.store
     current = store.get()
@@ -179,8 +179,8 @@ async def rman_save_settings(request: Request):
 async def rman_start_backup(request: Request):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "rman", "add"):
+        return permission_denied_redirect("rman")
 
     form = await request.form()
     tip = str(form.get("tip", "RMAN_FULL")).strip().upper()
@@ -229,8 +229,8 @@ async def rman_start_backup(request: Request):
 async def rman_schedule_add(request: Request):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "rman", "edit"):
+        return permission_denied_redirect("rman")
 
     form = await request.form()
     instance_id = str(form.get("instance_id", "")).strip()
@@ -259,8 +259,8 @@ async def rman_schedule_add(request: Request):
 async def rman_schedule_delete(request: Request):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "rman", "delete"):
+        return permission_denied_redirect("rman")
 
     form = await request.form()
     instance_id = str(form.get("instance_id", "")).strip()
@@ -304,8 +304,8 @@ def _parse_rman_schedule_form(form) -> RmanScheduleRule:
 def rman_view_log(request: Request, run_id: str):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return RedirectResponse(url="/rman?error=Log+icin+admin+yetkisi+gerekli", status_code=303)
+    if not can(request, "rman", "delete"):
+        return RedirectResponse(url="/rman?error=Log+icin+yetki+gerekli", status_code=303)
 
     settings = request.app.state.store.get()
     active = settings.get_instance(request.query_params.get("instance")) or settings.first_instance()
@@ -326,8 +326,8 @@ def rman_view_log(request: Request, run_id: str):
 async def rman_delete_backup(request: Request):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "rman", "delete"):
+        return permission_denied_redirect("rman")
 
     form = await request.form()
     run_id = str(form.get("run_id", "")).strip()
@@ -349,8 +349,8 @@ async def rman_delete_backup(request: Request):
 async def rman_probe_api(request: Request, instance_id: str):
     if not get_current_user(request):
         return JSONResponse({"ok": False, "error": "Oturum gerekli"}, status_code=401)
-    if not can_manage_settings(request):
-        return JSONResponse({"ok": False, "error": "Admin yetkisi gerekli"}, status_code=403)
+    if not can(request, "rman", "view"):
+        return JSONResponse({"ok": False, "error": "Yetkisiz"}, status_code=403)
 
     settings = request.app.state.store.get()
     target = settings.get_instance(instance_id)

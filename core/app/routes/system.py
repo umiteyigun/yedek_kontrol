@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus
@@ -6,11 +7,18 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from app.web.templates_env import templates
 
-from app.auth import can_manage_settings, get_current_user, login_redirect, settings_denied_redirect
-from app.config.ldap_config import LDAP_SETTINGS_DEFAULTS
+from app.auth import can, get_current_user, login_redirect, permission_denied_redirect
+from app.config.ldap_config import LDAP_SETTINGS_DEFAULTS, ROLE_FULL, ROLE_LIMITED
 from app.config.models import YedekSettings
 from app.routes.context import page_context
 from app.services.ldap_auth import test_ldap_connection
+from app.services.permissions import (
+    ACTION_LABELS,
+    MODULES,
+    MODULE_ORDER,
+    ROLE_DEFAULTS,
+    parse_permissions_from_form,
+)
 from app.services.server_info import clear_server_info_cache
 from app.services.server_time import collect_host_clock, list_host_timezones, set_host_clock, set_host_timezone
 
@@ -58,8 +66,8 @@ def _parse_auth_form(form, current: YedekSettings) -> dict[str, Any]:
 def system_page(request: Request):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "system", "view"):
+        return permission_denied_redirect("system")
 
     store = request.app.state.store
     local_store = request.app.state.local_user_store
@@ -78,6 +86,13 @@ def system_page(request: Request):
             "ldap_has_bind_password": bool(settings.ldap_bind_password),
             "timezone_options": list_host_timezones(),
             "host_clock": collect_host_clock(),
+            "permission_modules": MODULES,
+            "permission_module_order": MODULE_ORDER,
+            "permission_action_labels": ACTION_LABELS,
+            "role_perm_presets_json": json.dumps(ROLE_DEFAULTS, ensure_ascii=False),
+            "can_system_edit": can(request, "system", "edit"),
+            "can_system_add": can(request, "system", "add"),
+            "can_system_delete": can(request, "system", "delete"),
         }
     )
     return templates.TemplateResponse("sistem.html", ctx)
@@ -87,8 +102,8 @@ def system_page(request: Request):
 async def system_save(request: Request):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "system", "edit"):
+        return permission_denied_redirect("system")
 
     form = await request.form()
     store = request.app.state.store
@@ -105,7 +120,9 @@ async def system_save(request: Request):
 
 @router.post("/sistem/ldap/test")
 async def system_ldap_test(request: Request):
-    if not can_manage_settings(request):
+    if not get_current_user(request):
+        return login_redirect(request)
+    if not can(request, "system", "edit"):
         return JSONResponse({"ok": False, "message": "Yetkisiz"}, status_code=403)
 
     form = await request.form()
@@ -120,20 +137,21 @@ async def system_ldap_test(request: Request):
 
 
 @router.post("/sistem/yerel/ekle")
-async def system_local_add(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
-    role: str = Form("limited"),
-):
+async def system_local_add(request: Request):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "system", "add"):
+        return permission_denied_redirect("system")
+
+    form = await request.form()
+    username = str(form.get("username", ""))
+    password = str(form.get("password", ""))
+    role = str(form.get("role", ROLE_LIMITED))
+    permissions = parse_permissions_from_form(form)
 
     local_store = request.app.state.local_user_store
     try:
-        local_store.add_user(username, password, role)
+        local_store.add_user(username, password, role, permissions)
     except ValueError as exc:
         return RedirectResponse(url=f"/sistem?error={quote_plus(str(exc))}", status_code=303)
 
@@ -141,17 +159,17 @@ async def system_local_add(
 
 
 @router.post("/sistem/yerel/{username}/guncelle")
-async def system_local_update(
-    request: Request,
-    username: str,
-    role: str = Form(""),
-    enabled: str = Form(""),
-    password: str = Form(""),
-):
+async def system_local_update(request: Request, username: str):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "system", "edit"):
+        return permission_denied_redirect("system")
+
+    form = await request.form()
+    role = str(form.get("role", ""))
+    enabled = str(form.get("enabled", ""))
+    password = str(form.get("password", ""))
+    permissions = parse_permissions_from_form(form)
 
     local_store = request.app.state.local_user_store
     try:
@@ -160,6 +178,7 @@ async def system_local_update(
             role=role or None,
             enabled=(enabled == "1") if enabled else None,
             password=password or None,
+            permissions=permissions,
         )
     except ValueError as exc:
         return RedirectResponse(url=f"/sistem?error={quote_plus(str(exc))}", status_code=303)
@@ -171,8 +190,8 @@ async def system_local_update(
 async def system_local_delete(request: Request, username: str):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "system", "delete"):
+        return permission_denied_redirect("system")
 
     local_store = request.app.state.local_user_store
     try:
@@ -187,8 +206,8 @@ async def system_local_delete(request: Request, username: str):
 async def system_set_timezone(request: Request, server_timezone: str = Form(...)):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "system", "edit"):
+        return permission_denied_redirect("system")
 
     store = request.app.state.store
     current = store.get()
@@ -213,8 +232,8 @@ async def system_set_clock(
 ):
     if not get_current_user(request):
         return login_redirect()
-    if not can_manage_settings(request):
-        return settings_denied_redirect()
+    if not can(request, "system", "edit"):
+        return permission_denied_redirect("system")
 
     store = request.app.state.store
     current = store.get()

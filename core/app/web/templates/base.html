@@ -18,11 +18,11 @@
       <nav>
         <a href="{{ panel_url('/', request) }}" class="{% if request.url.path == '/' %}nav-active{% endif %}">Durum</a>
         <a href="{{ panel_url('/yedekler', request) }}" class="{% if request.url.path.startswith('/yedekler') %}nav-active{% endif %}">Yedekler</a>
-        {% if can_settings %}<a href="{{ panel_url('/rman', request) }}" class="{% if request.url.path.startswith('/rman') %}nav-active{% endif %}">RMAN</a>{% endif %}
-        {% if can_settings %}<a href="{{ panel_url('/ayarlar', request) }}" class="{% if request.url.path == '/ayarlar' %}nav-active{% endif %}">Ayarlar</a>{% endif %}
-        {% if can_settings %}<a href="{{ panel_url('/sistem', request) }}" class="{% if request.url.path == '/sistem' %}nav-active{% endif %}">Sistem</a>{% endif %}
-        {% if can_settings %}<a href="{{ panel_url('/tablespace', request) }}" class="{% if request.url.path.startswith('/tablespace') %}nav-active{% endif %}">Tablespace</a>{% endif %}
-        {% if can_settings %}<a href="{{ panel_url('/terminal', request) }}" class="{% if request.url.path == '/terminal' %}nav-active{% endif %}">Terminal</a>{% endif %}
+        {% if can_view_rman %}<a href="{{ panel_url('/rman', request) }}" class="{% if request.url.path.startswith('/rman') %}nav-active{% endif %}">RMAN</a>{% endif %}
+        {% if can_view_settings %}<a href="{{ panel_url('/ayarlar', request) }}" class="{% if request.url.path == '/ayarlar' %}nav-active{% endif %}">Ayarlar</a>{% endif %}
+        {% if can_view_system %}<a href="{{ panel_url('/sistem', request) }}" class="{% if request.url.path == '/sistem' %}nav-active{% endif %}">Sistem</a>{% endif %}
+        {% if can_view_tablespaces %}<a href="{{ panel_url('/tablespace', request) }}" class="{% if request.url.path.startswith('/tablespace') %}nav-active{% endif %}">Tablespace</a>{% endif %}
+        {% if can_view_terminal %}<a href="{{ panel_url('/terminal', request) }}" class="{% if request.url.path == '/terminal' %}nav-active{% endif %}">Terminal</a>{% endif %}
         <a href="{{ panel_url('/logout', request) }}" class="muted">Cikis</a>
       </nav>
     </div>

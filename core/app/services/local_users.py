@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config.ldap_config import ROLE_FULL, ROLE_LIMITED
+from app.services.permissions import normalize_permissions, permissions_for_role
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class LocalUserPublic:
     role: str
     enabled: bool
     created_at: str
+    permissions: dict[str, dict[str, bool]]
 
 
 def _utc_now() -> str:
@@ -90,6 +92,18 @@ class LocalUserStore:
         payload = {"users": list(self._users.values())}
         self._path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    def get_user(self, username: str) -> dict[str, Any] | None:
+        clean = (username or "").strip().lower()
+        with self._lock:
+            row = self._users.get(clean)
+            return dict(row) if row else None
+
+    def _public_permissions(self, row: dict[str, Any]) -> dict[str, dict[str, bool]]:
+        role = str(row.get("role") or ROLE_LIMITED)
+        if row.get("permissions"):
+            return normalize_permissions(row["permissions"])
+        return permissions_for_role(role)
+
     def list_users(self) -> list[LocalUserPublic]:
         with self._lock:
             rows = []
@@ -100,6 +114,7 @@ class LocalUserStore:
                         role=str(row.get("role") or ROLE_LIMITED),
                         enabled=bool(row.get("enabled", True)),
                         created_at=str(row.get("created_at") or ""),
+                        permissions=self._public_permissions(row),
                     )
                 )
             rows.sort(key=lambda item: item.username)
@@ -120,7 +135,13 @@ class LocalUserStore:
                 return None
             return role
 
-    def add_user(self, username: str, password: str, role: str) -> None:
+    def add_user(
+        self,
+        username: str,
+        password: str,
+        role: str,
+        permissions: dict[str, dict[str, bool]] | None = None,
+    ) -> None:
         clean = username.strip().lower()
         if not USERNAME_RE.fullmatch(clean):
             raise ValueError("Kullanici adi 3-32 karakter; harf, rakam, . _ -")
@@ -128,6 +149,7 @@ class LocalUserStore:
             raise ValueError("Sifre en az 6 karakter olmali")
         if role not in {ROLE_FULL, ROLE_LIMITED}:
             raise ValueError("Rol full veya limited olmali")
+        perms = normalize_permissions(permissions) if permissions is not None else permissions_for_role(role)
         with self._lock:
             if clean in self._users:
                 raise ValueError("Bu kullanici adi zaten var")
@@ -135,6 +157,7 @@ class LocalUserStore:
                 "username": clean,
                 "password_hash": hash_password(password),
                 "role": role,
+                "permissions": perms,
                 "enabled": True,
                 "created_at": _utc_now(),
             }
@@ -147,6 +170,7 @@ class LocalUserStore:
         role: str | None = None,
         enabled: bool | None = None,
         password: str | None = None,
+        permissions: dict[str, dict[str, bool]] | None = None,
     ) -> None:
         clean = username.strip().lower()
         with self._lock:
@@ -163,6 +187,8 @@ class LocalUserStore:
                 if len(password) < 6:
                     raise ValueError("Sifre en az 6 karakter olmali")
                 row["password_hash"] = hash_password(password)
+            if permissions is not None:
+                row["permissions"] = normalize_permissions(permissions)
             self._persist()
 
     def delete_user(self, username: str) -> None:
