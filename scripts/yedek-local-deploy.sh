@@ -88,6 +88,18 @@ while IFS= read -r f; do
   esac
 done <<<"$CHANGED"
 
+if echo "$CHANGED" | grep -q '^nginx/'; then
+  if [[ -f "$ROOT/nginx/yedek-panel.conf" ]]; then
+    echo "[$(ts)] nginx config guncelleniyor"
+    install -m 644 "$ROOT/nginx/yedek-panel.conf" /etc/nginx/conf.d/yedek-panel.conf
+    if nginx -t >/dev/null 2>&1; then
+      systemctl reload nginx 2>/dev/null || service nginx reload 2>/dev/null || true
+    else
+      echo "[$(ts)] UYARI: nginx config test basarisiz, reload atlandi"
+    fi
+  fi
+fi
+
 compose() {
   if docker compose version >/dev/null 2>&1; then
     docker compose "$@"

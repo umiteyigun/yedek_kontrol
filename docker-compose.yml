@@ -32,7 +32,9 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-0}
       SESSION_BIND_IP: ${SESSION_BIND_IP:-1}
       SESSION_BIND_UA: ${SESSION_BIND_UA:-1}
-      LOGIN_RATE_LIMIT: ${LOGIN_RATE_LIMIT:-8}
+      LOGIN_MAX_FAILURES: ${LOGIN_MAX_FAILURES:-10}
+      LOGIN_LOCKOUT_SEC: ${LOGIN_LOCKOUT_SEC:-900}
+      PANEL_SERVER_HEADER: ${PANEL_SERVER_HEADER:-YedekPanel}
       TZ: ${TZ:-Europe/Istanbul}
     env_file:
       - /yedek/config/central-agent.env

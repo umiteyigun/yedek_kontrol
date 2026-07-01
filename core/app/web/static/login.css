@@ -234,6 +234,22 @@
   margin-bottom: 1.25rem;
 }
 
+.login-alert.login-locked {
+  background: rgba(255, 176, 60, 0.12);
+  border-color: rgba(255, 176, 60, 0.38);
+  color: #ffcc70;
+}
+
+.login-form-locked fieldset[disabled] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.login-form-locked .login-submit[disabled] {
+  cursor: not-allowed;
+  filter: grayscale(0.4);
+}
+
 .login-form {
   display: grid;
   gap: 1rem;

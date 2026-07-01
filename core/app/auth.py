@@ -28,11 +28,12 @@ SESSION_MAX_AGE = PANEL_SESSION_TTL
 TERMINAL_SESSION_MAX_AGE = TERMINAL_SESSION_TTL
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "1").lower() in ("1", "true", "yes")
 
-LOGIN_RATE_LIMIT = int(os.getenv("LOGIN_RATE_LIMIT", "8"))
-LOGIN_RATE_WINDOW_SEC = int(os.getenv("LOGIN_RATE_WINDOW_SEC", "60"))
+LOGIN_MAX_FAILURES = int(os.getenv("LOGIN_MAX_FAILURES", os.getenv("LOGIN_RATE_LIMIT", "10")))
+LOGIN_LOCKOUT_SEC = int(os.getenv("LOGIN_LOCKOUT_SEC", os.getenv("LOGIN_RATE_WINDOW_SEC", "900")))
 
 _serializer = URLSafeSerializer(os.getenv("PANEL_SECRET", "change-me-in-production"), salt="yedek-panel-v2")
-_login_attempts: dict[str, list[float]] = {}
+_login_failures: dict[str, int] = {}
+_login_lockouts: dict[str, float] = {}
 logger = logging.getLogger(__name__)
 
 
@@ -160,34 +161,72 @@ def verify_master_login(username: str, password: str) -> bool:
     return secrets.compare_digest(username, MASTER_USER) and secrets.compare_digest(password, MASTER_PASS)
 
 
-def _login_rate_limited(ip: str) -> bool:
-    now = time.time()
-    window_start = now - LOGIN_RATE_WINDOW_SEC
-    attempts = [t for t in _login_attempts.get(ip, []) if t >= window_start]
-    _login_attempts[ip] = attempts
-    return len(attempts) >= LOGIN_RATE_LIMIT
+def _purge_login_lockout(ip: str, now: float | None = None) -> None:
+    ts = now if now is not None else time.time()
+    unlock = _login_lockouts.get(ip)
+    if unlock is not None and ts >= unlock:
+        _login_lockouts.pop(ip, None)
+        _login_failures.pop(ip, None)
 
 
-def _record_login_attempt(ip: str) -> None:
+def get_login_lockout_status(ip: str) -> tuple[bool, int]:
+    """Donus: (askida_mi, kalan_saniye)."""
+    if not ip:
+        return False, 0
     now = time.time()
-    window_start = now - LOGIN_RATE_WINDOW_SEC
-    attempts = [t for t in _login_attempts.get(ip, []) if t >= window_start]
-    attempts.append(now)
-    _login_attempts[ip] = attempts
+    _purge_login_lockout(ip, now)
+    unlock = _login_lockouts.get(ip)
+    if unlock is None:
+        return False, 0
+    remaining = int(unlock - now)
+    if remaining <= 0:
+        _purge_login_lockout(ip, now)
+        return False, 0
+    return True, remaining
+
+
+def login_lockout_message(remaining_sec: int) -> str:
+    minutes = max(1, (remaining_sec + 59) // 60)
+    return (
+        f"Bu IP adresi cok fazla basarisiz giris denemesi nedeniyle "
+        f"{minutes} dakika askiya alindi. Lutfen bekleyip tekrar deneyin."
+    )
 
 
 def is_login_rate_limited(request: Request) -> bool:
-    return _login_rate_limited(client_ip(request))
+    locked, _ = get_login_lockout_status(client_ip(request))
+    return locked
+
+
+def _record_login_failure(ip: str) -> None:
+    if not ip:
+        return
+    now = time.time()
+    if get_login_lockout_status(ip)[0]:
+        return
+    count = _login_failures.get(ip, 0) + 1
+    if count >= LOGIN_MAX_FAILURES:
+        _login_lockouts[ip] = now + LOGIN_LOCKOUT_SEC
+        _login_failures.pop(ip, None)
+        logger.warning("Login askiya alindi: ip=%s sure=%ss", ip, LOGIN_LOCKOUT_SEC)
+        return
+    _login_failures[ip] = count
+
+
+def _clear_login_failures(ip: str) -> None:
+    _login_failures.pop(ip, None)
+    _login_lockouts.pop(ip, None)
 
 
 def authenticate(request: Request, username: str, password: str) -> tuple[bool, str, str]:
     """Donus: (ok, auth_method, role)."""
     ip = client_ip(request)
-    if _login_rate_limited(ip):
+    locked, _ = get_login_lockout_status(ip)
+    if locked:
         return False, "", ""
 
     if verify_master_login(username, password):
-        _login_attempts.pop(ip, None)
+        _clear_login_failures(ip)
         return True, "master", ROLE_FULL
 
     store = getattr(request.app.state, "store", None)
@@ -202,16 +241,16 @@ def authenticate(request: Request, username: str, password: str) -> tuple[bool, 
             if role and role_store and not role_store.role_exists(role):
                 role = None
             if role:
-                _login_attempts.pop(ip, None)
+                _clear_login_failures(ip)
                 return True, "local", role
 
     if auth_mode in ("ldap", "ldap_and_local") and settings:
         ok, role = ldap_login(username, password, settings)
         if ok and role:
-            _login_attempts.pop(ip, None)
+            _clear_login_failures(ip)
             return True, "ldap", role
 
-    _record_login_attempt(ip)
+    _record_login_failure(ip)
     return False, "", ""
 
 

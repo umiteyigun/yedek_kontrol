@@ -43,25 +43,31 @@
 
         <p class="login-lead">Kurum verilerinizi guvence altina alan yedek yonetim merkezi.</p>
 
-        {% if error %}
+        {% if login_locked %}
+        <div class="login-alert login-locked" role="alert">{{ lockout_message }}</div>
+        {% elif error %}
         <div class="login-alert" role="alert">{{ error }}</div>
         {% endif %}
 
-        <form method="post" action="/login" class="login-form">
+        <form method="post" action="/login" class="login-form{% if login_locked %} login-form-locked{% endif %}">
+          <fieldset{% if login_locked %} disabled{% endif %}>
           <label class="field">
             <span>Kullanici adi</span>
-            <input type="text" name="username" required autocomplete="username" placeholder="LDAP veya yerel kullanici">
+            <input type="text" name="username" required autocomplete="username" placeholder="LDAP veya yerel kullanici"{% if login_locked %} disabled{% endif %}>
           </label>
           <label class="field">
             <span>Sifre</span>
-            <input type="password" name="password" required autocomplete="current-password" placeholder="••••••••">
+            <input type="password" name="password" required autocomplete="current-password" placeholder="••••••••"{% if login_locked %} disabled{% endif %}>
           </label>
-          <button type="submit" class="login-submit">
-            <span>Panele Gir</span>
+          <button type="submit" class="login-submit"{% if login_locked %} disabled{% endif %}>
+            <span>{% if login_locked %}Giris Askida{% else %}Panele Gir{% endif %}</span>
+            {% if not login_locked %}
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M5 12H19M19 12L13 6M19 12L13 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
+            {% endif %}
           </button>
+          </fieldset>
         </form>
 
         <footer class="login-foot">

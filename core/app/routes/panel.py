@@ -17,9 +17,12 @@ from app.auth import (
     cookie_kwargs,
     cookie_kwargs_for_request,
     create_panel_session,
+    client_ip,
     get_current_user,
+    get_login_lockout_status,
     get_session,
     is_login_rate_limited,
+    login_lockout_message,
     login_redirect,
     permission_denied_redirect,
     revoke_panel_session,
@@ -313,11 +316,23 @@ def _settings_context(
     return ctx
 
 
+def _login_template_context(request: Request, *, error: str = "") -> dict[str, Any]:
+    ip = client_ip(request)
+    locked, remaining = get_login_lockout_status(ip)
+    return {
+        "request": request,
+        "error": error,
+        "login_locked": locked,
+        "lockout_remaining_sec": remaining,
+        "lockout_message": login_lockout_message(remaining) if locked else "",
+    }
+
+
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
     if get_current_user(request):
         return attach_central_session_cookie(request, RedirectResponse(url="/", status_code=303))
-    return templates.TemplateResponse("login.html", {"request": request, "error": ""})
+    return templates.TemplateResponse("login.html", _login_template_context(request))
 
 
 @router.post("/login")
@@ -334,22 +349,20 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
             )
         return response
     if is_login_rate_limited(request):
-        return templates.TemplateResponse(
-            "login.html",
-            {
-                "request": request,
-                "error": "Cok fazla basarisiz deneme. Lutfen 1 dakika bekleyip tekrar deneyin.",
-            },
-            status_code=429,
-        )
+        ctx = _login_template_context(request)
+        return templates.TemplateResponse("login.html", ctx, status_code=429)
     ok, auth_method, role = authenticate(request, username, password)
     if not ok:
+        locked, remaining = get_login_lockout_status(client_ip(request))
+        if locked:
+            ctx = _login_template_context(request)
+            return templates.TemplateResponse("login.html", ctx, status_code=429)
         return templates.TemplateResponse(
             "login.html",
-            {
-                "request": request,
-                "error": "Giris basarisiz. LDAP, yerel kullanici veya master hesabi gerekli.",
-            },
+            _login_template_context(
+                request,
+                error="Giris basarisiz. LDAP, yerel kullanici veya master hesabi gerekli.",
+            ),
             status_code=401,
         )
     response = RedirectResponse(url="/", status_code=303)

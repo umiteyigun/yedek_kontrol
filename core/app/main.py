@@ -103,7 +103,22 @@ async def lifespan(app: FastAPI):
         ftp.stop()
 
 
-app = FastAPI(title="Yedek Core", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="Yedek Core", version="2.0.0", lifespan=lifespan, docs_url=None, redoc_url=None)
+
+PANEL_SERVER_HEADER = os.getenv("PANEL_SERVER_HEADER", "YedekPanel")
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next) -> Response:
+    response = await call_next(request)
+    if "server" in response.headers:
+        del response.headers["server"]
+    if PANEL_SERVER_HEADER:
+        response.headers["Server"] = PANEL_SERVER_HEADER
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    return response
 
 
 @app.middleware("http")
