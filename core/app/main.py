@@ -12,6 +12,7 @@ from app.auth import SESSION_COOKIE, SESSION_MAX_AGE, cookie_kwargs_for_request
 from app.config.applier import ConfigApplier
 from app.config.store import ConfigStore
 from app.routes import api, backups, panel, rman, system, tablespaces, terminal
+from app.services.central_proxy_auth import CENTRAL_PROXY_SECRET, MIN_CENTRAL_PROXY_SECRET_LEN
 from app.services.local_users import LocalUserStore
 from app.services.backup_schedule import BackupScheduleService
 from app.services.ftp import DynamicFTPService
@@ -60,6 +61,10 @@ async def lifespan(app: FastAPI):
         logger.info("Yerel FTP sunucusu aktif")
     else:
         logger.info("Yerel FTP kapali — yedekler uzak FTP'ye instance ayarindan gonderilir")
+    if not CENTRAL_PROXY_SECRET or len(CENTRAL_PROXY_SECRET) < MIN_CENTRAL_PROXY_SECRET_LEN:
+        logger.warning(
+            "CENTRAL_PROXY_SECRET eksik veya kisa — merkez hub proxy oturumu reddedilir"
+        )
     retention.start()
     backup_schedule.start(settings)
     rman_schedule.start(settings)

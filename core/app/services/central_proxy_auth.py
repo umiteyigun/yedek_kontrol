@@ -18,6 +18,7 @@ from app.config.ldap_config import ROLE_FULL, ROLE_LIMITED
 logger = logging.getLogger(__name__)
 
 CENTRAL_PROXY_SECRET = os.getenv("CENTRAL_PROXY_SECRET", "").strip()
+MIN_CENTRAL_PROXY_SECRET_LEN = 32
 LOCAL_AGENT_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
@@ -40,7 +41,7 @@ def is_central_proxy_headers(headers: Mapping[str, str]) -> bool:
 
 
 def verify_central_token(token: str) -> dict[str, Any] | None:
-    if not CENTRAL_PROXY_SECRET or not token:
+    if not CENTRAL_PROXY_SECRET or len(CENTRAL_PROXY_SECRET) < MIN_CENTRAL_PROXY_SECRET_LEN or not token:
         return None
     parts = token.split(".")
     if len(parts) != 3 or parts[0] != "v1":
@@ -79,7 +80,7 @@ def resolve_central_proxy_user(request: Request) -> dict[str, Any] | None:
 
 
 def resolve_central_proxy_headers(headers: Mapping[str, str]) -> dict[str, Any] | None:
-    if not CENTRAL_PROXY_SECRET:
+    if not CENTRAL_PROXY_SECRET or len(CENTRAL_PROXY_SECRET) < MIN_CENTRAL_PROXY_SECRET_LEN:
         return None
     if not is_central_proxy_headers(headers):
         return None

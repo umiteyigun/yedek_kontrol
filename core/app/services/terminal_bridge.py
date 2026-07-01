@@ -274,14 +274,16 @@ def _split_host_port(netloc: str) -> tuple[str, int | None]:
 
 def _origin_allowed(websocket: WebSocket) -> bool:
     """CSWSH: Origin host ile Host header eslesmeli (nginx port dusurse bile)."""
-    if is_central_proxy_headers(websocket.headers):
-        # Hub proxy: tarayici origin hub adresi, agent ise yerel panele baglanir.
-        return True
-
     origin = websocket.headers.get("origin")
     host = websocket.headers.get("host")
-    if not host or not origin:
+    if not host:
         return False
+    if not origin:
+        # Tarayici disi kopru (hub agent): yalnizca imzali merkez proxy token ile.
+        return is_central_proxy_headers(websocket.headers) and bool(
+            resolve_central_proxy_headers(websocket.headers)
+        )
+
     parsed = urlparse(origin)
     if not parsed.scheme or not parsed.netloc:
         return False
