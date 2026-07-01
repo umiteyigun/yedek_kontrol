@@ -3,7 +3,19 @@
 # setup.sh ve yedek-local-deploy.sh tarafindan cagrilir.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -n "${YEDEK_ROOT:-}" && -f "${YEDEK_ROOT}/scripts/yedek.sh" ]]; then
+  ROOT="$YEDEK_ROOT"
+else
+  ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  if [[ ! -f "$ROOT/scripts/yedek.sh" && -f /opt/yedek_kontrol/scripts/yedek.sh ]]; then
+    ROOT="/opt/yedek_kontrol"
+  fi
+fi
+
+if [[ ! -f "$ROOT/scripts/yedek.sh" ]]; then
+  echo "[host-scripts] HATA: repo bulunamadi (ROOT=$ROOT)" >&2
+  exit 1
+fi
 
 log() { echo "[host-scripts] $*"; }
 

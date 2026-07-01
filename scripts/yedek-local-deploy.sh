@@ -74,7 +74,7 @@ for rel in "${PRESERVE[@]}"; do
 done
 
 install -m 755 "$ROOT/scripts/install-host-scripts.sh" /yedek/config/install-host-scripts.sh
-bash /yedek/config/install-host-scripts.sh
+YEDEK_ROOT="$ROOT" bash /yedek/config/install-host-scripts.sh
 
 CHANGED="$(git diff --name-only "$OLD_SHA" HEAD 2>/dev/null || true)"
 needs_core=0
