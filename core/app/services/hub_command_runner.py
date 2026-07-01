@@ -66,7 +66,7 @@ fi
     try:
         proc = subprocess.run(
             cmd,
-            input=script,
+            input=script.encode("utf-8"),
             capture_output=True,
             text=False,
             timeout=timeout,
