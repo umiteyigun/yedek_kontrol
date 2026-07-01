@@ -1889,6 +1889,45 @@ body.page-tablespace .dash-canvas { overflow-x: hidden; }
   font-size: 0.8rem;
 }
 
+.ts-df-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.ts-df-head-text {
+  display: flex;
+  align-items: baseline;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.ts-add-hint {
+  margin: 0 0 0.85rem;
+  color: var(--accent);
+  font-size: 0.82rem;
+}
+
+.ts-add-modal input[type="text"] {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+}
+
+#ts-add-df-path {
+  width: 100%;
+}
+
+#ts-add-df-status.error {
+  color: #f87171;
+}
+
+#ts-add-df-status.loading {
+  color: var(--accent);
+}
+
 .compact-tabs .instance-tab { padding: 0.35rem 0.7rem; font-size: 0.78rem; }
 
 .ts-instance-tabs {

@@ -2,11 +2,17 @@
 # Oracle tablespace ozeti ve datafile listesi (SYSDBA) — JSON cikti
 # Kullanim: oracle-tablespaces.sh list <ORACLE_SID>
 #           oracle-tablespaces.sh datafiles <ORACLE_SID> <TABLESPACE>
+#           oracle-tablespaces.sh add <ORACLE_SID> <TABLESPACE> <FILE_PATH> <SIZE_MB> <AUTO_YES_NO> <NEXT_MB> <MAX_MB|UNLIMITED>
 set -euo pipefail
 
-MODE="${1:?list|datafiles}"
+MODE="${1:?list|datafiles|add}"
 SID="${2:?ORACLE_SID gerekli}"
 TS_NAME="${3:-}"
+FILE_PATH="${4:-}"
+SIZE_MB="${5:-}"
+AUTO_EXT="${6:-no}"
+NEXT_MB="${7:-0}"
+MAX_SIZE="${8:-UNLIMITED}"
 
 ORACLE_HOME="${ORACLE_HOME:-}"
 if [[ -z "$ORACLE_HOME" && -d /u01/app/oracle/product ]]; then
@@ -104,6 +110,50 @@ if [[ "$MODE" == "list" ]]; then
 elif [[ "$MODE" == "datafiles" ]]; then
   [[ -n "$TS_NAME" ]] || { printf '%s\n' '{"ok":false,"error":"tablespace adi gerekli"}'; exit 0; }
   SQL_OUT="$(run_sqlplus "$DATAFILES_SQL" || true)"
+elif [[ "$MODE" == "add" ]]; then
+  [[ -n "$TS_NAME" && -n "$FILE_PATH" && -n "$SIZE_MB" ]] || {
+    printf '%s\n' '{"ok":false,"error":"tablespace, dosya yolu ve boyut gerekli"}'
+    exit 0
+  }
+  if [[ "$FILE_PATH" != /* ]]; then
+    printf '%s\n' '{"ok":false,"error":"Dosya yolu / ile baslamali"}'
+    exit 0
+  fi
+  if [[ "$FILE_PATH" != *.dbf && "$FILE_PATH" != *.DBF ]]; then
+    printf '%s\n' '{"ok":false,"error":"Dosya adi .dbf ile bitmeli"}'
+    exit 0
+  fi
+  SAFE_PATH="${FILE_PATH//\'/\'\'}"
+  TS_UPPER="$(echo "$TS_NAME" | tr '[:lower:]' '[:upper:]')"
+  if [[ ! "$TS_UPPER" =~ ^[A-Z0-9_#$]+$ ]]; then
+    printf '%s\n' '{"ok":false,"error":"Gecersiz tablespace adi"}'
+    exit 0
+  fi
+  if [[ ! "$SIZE_MB" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' '{"ok":false,"error":"Boyut sayi olmali (MB)"}'
+    exit 0
+  fi
+  ADD_SQL="ALTER TABLESPACE ${TS_UPPER} ADD DATAFILE '${SAFE_PATH}' SIZE ${SIZE_MB}M"
+  AUTO_LC="$(echo "$AUTO_EXT" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$AUTO_LC" == "yes" ]]; then
+    NEXT_VAL="${NEXT_MB:-100}"
+    MAX_VAL="${MAX_SIZE:-UNLIMITED}"
+    if [[ ! "$NEXT_VAL" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' '{"ok":false,"error":"NEXT boyutu sayi olmali"}'
+      exit 0
+    fi
+    if [[ "$(echo "$MAX_VAL" | tr '[:upper:]' '[:lower:]')" == "unlimited" ]]; then
+      ADD_SQL="${ADD_SQL} AUTOEXTEND ON NEXT ${NEXT_VAL}M MAXSIZE UNLIMITED"
+    elif [[ "$MAX_VAL" =~ ^[0-9]+$ ]]; then
+      ADD_SQL="${ADD_SQL} AUTOEXTEND ON NEXT ${NEXT_VAL}M MAXSIZE ${MAX_VAL}M"
+    else
+      printf '%s\n' '{"ok":false,"error":"MAXSIZE sayi veya UNLIMITED olmali"}'
+      exit 0
+    fi
+  fi
+  ADD_SQL="${ADD_SQL};"
+  export FILE_PATH="$FILE_PATH"
+  SQL_OUT="$(run_sqlplus "$ADD_SQL" || true)"
 else
   printf '%s\n' '{"ok":false,"error":"gecersiz mod"}'
   exit 0
@@ -122,7 +172,7 @@ fi
 
 TMP_ROWS="$(mktemp)"
 printf '%s\n' "${ROWS[@]:-}" >"$TMP_ROWS"
-export MODE SID TS_NAME ERROR ROWS_FILE="$TMP_ROWS"
+export MODE SID TS_NAME ERROR ROWS_FILE="$TMP_ROWS" FILE_PATH="${FILE_PATH:-}"
 PYBIN="$(command -v python3 2>/dev/null || command -v python 2>/dev/null)"
 if [[ -z "$PYBIN" ]]; then
   printf '%s\n' '{"ok":false,"error":"python bulunamadi"}'
@@ -155,6 +205,11 @@ def num(s, default=0):
 
 out = {"ok": not bool(error), "oracle_sid": sid, "error": error}
 if error:
+    print(json.dumps(out, ensure_ascii=False))
+    raise SystemExit(0)
+
+if mode == "add":
+    out["message"] = f"Datafile eklendi: {os.environ.get('FILE_PATH', '')}"
     print(json.dumps(out, ensure_ascii=False))
     raise SystemExit(0)
 

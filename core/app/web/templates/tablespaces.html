@@ -130,9 +130,14 @@
         </div>
 
         <div id="ts-datafiles" class="ts-panel {% if view_mode == 'datafiles' %}active{% endif %}">
-          <div class="panel-head">
-            <h2 class="panel-title"><span class="title-accent"></span>Datafiles — <span id="ts-df-title">{{ selected_tablespace or '—' }}</span></h2>
-            <span class="panel-meta" id="ts-df-count">{% if view_mode == 'datafiles' and datafiles %}{{ datafiles|length }} datafile{% else %}—{% endif %}</span>
+          <div class="panel-head ts-df-head">
+            <div class="ts-df-head-text">
+              <h2 class="panel-title"><span class="title-accent"></span>Datafiles — <span id="ts-df-title">{{ selected_tablespace or '—' }}</span></h2>
+              <span class="panel-meta" id="ts-df-count">{% if view_mode == 'datafiles' and datafiles %}{{ datafiles|length }} datafile{% else %}—{% endif %}</span>
+            </div>
+            {% if view_mode == 'datafiles' and selected_tablespace %}
+            <button type="button" class="btn-glow btn-sm" id="ts-add-df-btn">+ Datafile Ekle</button>
+            {% endif %}
           </div>
           <div class="ts-table-wrap" id="ts-df-wrap">
             <table class="ts-table">
@@ -189,6 +194,60 @@
     </div>
   </div>
 </div>
+
+{% if view_mode == 'datafiles' and selected_tablespace %}
+<dialog id="ts-add-df-modal" class="schedule-modal panel-3d ts-add-modal">
+  <form id="ts-add-df-form" class="schedule-modal-form">
+    <div class="schedule-modal-head">
+      <h3>Datafile Ekle — {{ selected_tablespace }}</h3>
+      <button type="button" class="btn-ghost btn-sm" id="ts-add-df-close">Kapat</button>
+    </div>
+    <p class="form-hint ts-add-hint" id="ts-add-df-hint">
+      {% if datafile_suggest %}{{ datafile_suggest.hint }}{% else %}Onerilen dosya adini degistirebilirsiniz.{% endif %}
+    </p>
+    <div class="form-grid">
+      <label class="full">
+        Tam dosya yolu
+        <input type="text" id="ts-add-df-path" name="file_path" required
+          value="{{ datafile_suggest.suggested_path if datafile_suggest else '' }}"
+          placeholder="/u01/oradata/ORCL/users_003.dbf" spellcheck="false" autocapitalize="off">
+      </label>
+      <label>
+        Baslangic boyutu (MB)
+        <input type="number" id="ts-add-df-size" name="size_mb" min="1" max="32767" step="1"
+          value="{{ datafile_suggest.size_mb if datafile_suggest else 1024 }}" required>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" id="ts-add-df-auto" name="auto_extend" {% if not datafile_suggest or datafile_suggest.auto_extend %}checked{% endif %}>
+        Autoextend
+      </label>
+      <label id="ts-add-df-next-wrap">
+        NEXT (MB)
+        <input type="number" id="ts-add-df-next" name="next_mb" min="1" max="32767" step="1"
+          value="{{ datafile_suggest.next_mb if datafile_suggest else 100 }}">
+      </label>
+      <label id="ts-add-df-max-wrap">
+        MAXSIZE
+        <input type="text" id="ts-add-df-max" name="max_size"
+          value="{{ datafile_suggest.max_size if datafile_suggest else 'UNLIMITED' }}"
+          placeholder="UNLIMITED veya MB">
+      </label>
+    </div>
+    <p class="form-hint" id="ts-add-df-status" hidden></p>
+    <div class="form-actions">
+      <button type="submit" class="btn-glow btn-sm" id="ts-add-df-submit">Olustur</button>
+      <button type="button" class="btn-ghost btn-sm" id="ts-add-df-cancel">Iptal</button>
+    </div>
+  </form>
+</dialog>
+<div id="ts-page-boot" hidden
+  data-tablespace="{{ selected_tablespace }}"
+  data-instance="{{ active_instance_id }}"></div>
+{% endif %}
 {% endblock %}
 
-{% block extra_scripts %}{% endblock %}
+{% block extra_scripts %}
+{% if view_mode == 'datafiles' and selected_tablespace %}
+<script src="{{ static_url('/static/tablespace-page.js', request) }}?v=1"></script>
+{% endif %}
+{% endblock %}
