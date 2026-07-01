@@ -2,7 +2,7 @@
 # systemd ExecStart/ExecStop icin yedek-docker stack kontrolu
 set -euo pipefail
 
-ROOT="${YEDEK_DOCKER_ROOT:-/root/yedek-docker}"
+ROOT="${YEDEK_DOCKER_ROOT:-${YEDEK_ROOT:-/opt/yedek_kontrol}}"
 cd "$ROOT"
 
 compose_cmd() {

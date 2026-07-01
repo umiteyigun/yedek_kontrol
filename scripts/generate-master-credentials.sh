@@ -24,16 +24,46 @@ set_env_var() {
   fi
 }
 
+write_creds_file() {
+  local user="$1" pass="$2"
+  cat >"$CREDS_FILE" <<EOF
+================================================================================
+  YEDEK PANEL - MASTER KULLANICI (guvenli yerde saklayin)
+================================================================================
+  Olusturma : $(date -Iseconds)
+  Kullanici : ${user}
+  Sifre     : ${pass}
+
+  Not: LDAP aktif olsa bile bu kullanici ile giris yapilabilir.
+  Dosya izni: chmod 600
+================================================================================
+EOF
+  chmod 600 "$CREDS_FILE"
+}
+
 mkdir -p "$CREDS_DIR"
 chmod 700 "$CREDS_DIR"
 [[ -f "$ENV_FILE" ]] || cp "${ROOT}/.env.example" "$ENV_FILE"
 
+MASTER_USER="$(grep -m1 '^MASTER_USER=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
+MASTER_USER="${MASTER_USER:-trtek-master}"
+
 if grep -q '^MASTER_PASS=.\+' "$ENV_FILE" 2>/dev/null; then
-  echo "MASTER_PASS zaten tanimli: ${CREDS_FILE}"
+  MASTER_PASS="$(grep -m1 '^MASTER_PASS=' "$ENV_FILE" | cut -d= -f2-)"
+  if ! grep -q '^PANEL_SECRET=.\+' "$ENV_FILE" 2>/dev/null; then
+    set_env_var "PANEL_SECRET" "$(gen_hex)"
+  fi
+  set_env_var "PANEL_USER" "$MASTER_USER"
+  set_env_var "PANEL_PASS" "$MASTER_PASS"
+  if [[ -f "$CREDS_FILE" ]]; then
+    echo "Master kullanici zaten tanimli: ${CREDS_FILE}"
+    exit 0
+  fi
+  write_creds_file "$MASTER_USER" "$MASTER_PASS"
+  echo "Master kullanici kaydedildi: ${CREDS_FILE}"
   exit 0
 fi
 
-MASTER_USER="trtek-master"
 MASTER_PASS="$(gen_pass)"
 PANEL_SECRET="$(gen_hex)"
 
@@ -43,18 +73,5 @@ set_env_var "PANEL_SECRET" "$PANEL_SECRET"
 set_env_var "PANEL_USER" "$MASTER_USER"
 set_env_var "PANEL_PASS" "$MASTER_PASS"
 
-cat >"$CREDS_FILE" <<EOF
-================================================================================
-  YEDEK PANEL - MASTER KULLANICI (guvenli yerde saklayin)
-================================================================================
-  Olusturma : $(date -Iseconds)
-  Kullanici : ${MASTER_USER}
-  Sifre     : ${MASTER_PASS}
-
-  Not: LDAP aktif olsa bile bu kullanici ile giris yapilabilir.
-  Dosya izni: chmod 600
-================================================================================
-EOF
-chmod 600 "$CREDS_FILE"
-
+write_creds_file "$MASTER_USER" "$MASTER_PASS"
 echo "Master kullanici olusturuldu: ${CREDS_FILE}"

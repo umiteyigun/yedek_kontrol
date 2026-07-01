@@ -50,4 +50,6 @@ install -m 755 "$ROOT/scripts/install-panel-ssl.sh" /yedek/config/install-panel-
 ln -sfn /yedek/config/yedekconfig.sh /usr/bin/yedekconfig.sh 2>/dev/null || true
 ln -sfn /yedek/config/yedekconfig.sh /usr/bin/yedekconfig2.sh 2>/dev/null || true
 
+install -m 755 "$ROOT/scripts/install-host-scripts.sh" /yedek/config/install-host-scripts.sh
+
 log "kuruldu ($(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo local))"

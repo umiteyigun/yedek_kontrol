@@ -10,9 +10,24 @@ from app.config.models import YedekSettings
 from app.config.store import ConfigStore
 from app.services import backups as backup_service
 from app.services import rman_backups as rman_service
+from app.services.notifications import NotificationService
 from app.services.oracle_probe import instance_runtime_map
 from app.services.oracle_rman_probe import rman_runtime_map
 from app.services.server_info import collect_all_instance_oracle_stats, get_server_info
+
+
+def _last_reports_by_instance(config_dir: Path) -> dict[str, dict[str, Any]]:
+    """InstanceId -> son YedekBildirimi kaydi (kurumsalapi alanlari)."""
+    items = NotificationService(config_dir).recent(limit=200)
+    by_inst: dict[str, dict[str, Any]] = {}
+    for entry in items:
+        iid = str(entry.get("InstanceId") or "").strip()
+        if not iid:
+            continue
+        prev = by_inst.get(iid)
+        if not prev or str(entry.get("received_at", "")) > str(prev.get("received_at", "")):
+            by_inst[iid] = entry
+    return by_inst
 
 
 def collect_agent_snapshot(
@@ -23,6 +38,7 @@ def collect_agent_snapshot(
     runtime_map = instance_runtime_map(settings.model_dump())
     rman_runtime = rman_runtime_map(settings.model_dump())
     oracle_stats_map = collect_all_instance_oracle_stats(settings, runtime_map)
+    last_reports = _last_reports_by_instance(getattr(store, "_config_dir", Path("/app/config")))
 
     instances: list[dict[str, Any]] = []
     for inst in settings.instances:
@@ -66,6 +82,7 @@ def collect_agent_snapshot(
                 "last_rman": last_rman,
                 "log_mode": rman_rt.get("log_mode"),
                 "archivelog": rman_rt.get("archivelog"),
+                "last_report": last_reports.get(inst.id),
             }
         )
 

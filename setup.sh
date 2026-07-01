@@ -2,11 +2,17 @@
 # =============================================================================
 # yedek-docker kurulum scripti
 # Kullanim: bash setup.sh
+# Non-interactive: SETUP_NONINTERACTIVE=1 bash setup.sh
+# Agent env ile: ORG_ENROLLMENT_CODE=... HUB_HTTP_URL=... bash setup.sh
 # =============================================================================
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
+
+# shellcheck source=scripts/setup-prompts.sh
+source "$ROOT/scripts/setup-prompts.sh"
+PROMPT_ROOT="$ROOT"
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 fail() { echo "HATA: $*" >&2; exit 1; }
@@ -93,25 +99,28 @@ prepare_config() {
     cp "$ROOT/config/settings.empty.json" "$ROOT/config/settings.json"
     log "settings.json bos degerlerle olusturuldu"
   fi
-
-  bash "$ROOT/scripts/generate-master-credentials.sh"
 }
 
-# --- 2b. Host paketleri (zip vb.) ---
+# --- 2b. Host paketleri ---
 install_host_packages() {
-  log "Host paketleri kontrol ediliyor (zip, unzip, ftp)..."
+  log "Host paketleri kontrol ediliyor (zip, git, python, openssl, ftp)..."
   if command -v yum >/dev/null 2>&1; then
-    yum install -y zip unzip ftp || log "UYARI: zip/unzip/ftp kurulamadi"
+    yum install -y zip unzip ftp git openssl util-linux python || \
+      yum install -y --disablerepo=updates zip unzip ftp git openssl util-linux python || \
+      log "UYARI: bazi host paketleri kurulamadi"
   elif command -v apt-get >/dev/null 2>&1; then
-    apt-get update -qq && apt-get install -y zip unzip || log "UYARI: zip/unzip kurulamadi"
+    apt-get update -qq && apt-get install -y zip unzip git openssl util-linux python3 || \
+      log "UYARI: bazi host paketleri kurulamadi"
   else
-    log "UYARI: zip kurulumu atlandi (yum/apt yok)"
+    log "UYARI: paket kurulumu atlandi (yum/apt yok)"
   fi
-  if command -v zip >/dev/null 2>&1; then
-    log "zip hazir: $(zip -v 2>/dev/null | head -1 || echo ok)"
-  else
-    log "UYARI: zip komutu bulunamadi — Zip sifreli yedek modu calismaz"
-  fi
+  for need in zip git python flock openssl; do
+    if command -v "$need" >/dev/null 2>&1; then
+      log "$need hazir"
+    else
+      log "UYARI: $need bulunamadi — panel/yedek veya oto-guncelleme etkilenebilir"
+    fi
+  done
 }
 
 # --- 3. Host scriptleri ve watcher ---
@@ -226,7 +235,13 @@ prepare_central_agent_config() {
   mkdir -p /yedek/config/agent-state
 
   if [[ -f "$dst" ]]; then
-    log "Merkez agent config mevcut: $dst"
+    # shellcheck source=/dev/null
+    source "$dst"
+    if [[ -n "${ORG_ENROLLMENT_CODE:-}" ]]; then
+      log "Merkez agent config mevcut: $dst"
+      return 0
+    fi
+    log "Merkez agent sablonu mevcut (ORG_ENROLLMENT_CODE bos): $dst"
     return 0
   fi
 
@@ -234,24 +249,17 @@ prepare_central_agent_config() {
     local hub_http="${HUB_HTTP_URL:-http://127.0.0.1:8444}"
     local hub_ws="${HUB_WS_URL:-${hub_http/http/ws}/agent/v1}"
     hub_ws="${hub_ws/https/wss}"
-    cat >"$dst" <<EOF
-ORG_ENROLLMENT_CODE=${ORG_ENROLLMENT_CODE}
-HUB_HTTP_URL=${hub_http}
-HUB_WS_URL=${hub_ws}
-PANEL_LOCAL_URL=https://127.0.0.1:8443
-NODE_LABEL=${NODE_LABEL:-primary}
-NODE_ROLE=${NODE_ROLE:-PRIMARY}
-AGENT_VERIFY_TLS=0
-AGENT_STATE_DIR=/var/lib/yedek-agent
-EOF
-    chmod 600 "$dst"
+    write_central_agent_env \
+      "$ORG_ENROLLMENT_CODE" "$hub_http" "$hub_ws" \
+      "${HUB_AGENT_REGISTER_SECRET:-}" "${CENTRAL_PROXY_SECRET:-}" \
+      "${NODE_LABEL:-primary}" "${NODE_ROLE:-PRIMARY}"
     log "Merkez agent config olusturuldu: $dst"
     return 0
   fi
 
   if [[ -f "$example" ]]; then
     install -m 600 "$example" "$dst"
-    log "Merkez agent sablonu: $dst (ORG_ENROLLMENT_CODE doldurun, sonra: compose --profile central up -d)"
+    log "Merkez agent sablonu: $dst"
   fi
 }
 
@@ -329,6 +337,9 @@ print_summary() {
     yedek-auto-update.timer      -> GitHub commit kontrolu (~2dk)
     docker.service               -> container motoru
 
+  Dogrulama:
+    bash $ROOT/scripts/verify-client-setup.sh
+
   Komutlar:
     systemctl status yedek-docker yedek-backup-watcher
     systemctl status yedek-auto-update.timer
@@ -343,6 +354,7 @@ print_summary() {
     journalctl -u yedek-backup-watcher -f
 ================================================================================
 EOF
+  print_config_hints
 }
 
 main() {
@@ -351,6 +363,8 @@ main() {
   ensure_docker_running
   check_compose
   prepare_config
+  interactive_configure
+  bash "$ROOT/scripts/generate-master-credentials.sh"
   install_host_packages
   install_host_scripts
   prepare_central_agent_config
@@ -358,6 +372,9 @@ main() {
   bash "$ROOT/scripts/install-panel-ssl.sh" || log "UYARI: HTTPS nginx kurulumu atlandi veya basarisiz"
   install_systemd_services
   install_auto_update_timer
+  if [[ -x "$ROOT/scripts/verify-client-setup.sh" ]]; then
+    bash "$ROOT/scripts/verify-client-setup.sh" || log "UYARI: kurulum dogrulamasinda eksikler var"
+  fi
   print_summary
   log "=== setup bitti ==="
 }
