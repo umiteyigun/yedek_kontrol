@@ -209,7 +209,7 @@ if error:
     raise SystemExit(0)
 
 if mode == "add":
-    out["message"] = f"Datafile eklendi: {os.environ.get('FILE_PATH', '')}"
+    out["message"] = "Datafile eklendi: " + os.environ.get("FILE_PATH", "")
     print(json.dumps(out, ensure_ascii=False))
     raise SystemExit(0)
 
