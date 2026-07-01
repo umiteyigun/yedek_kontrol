@@ -57,48 +57,79 @@ if [[ -f /etc/oratab ]]; then
   export ORACLE_HOME
 fi
 if [[ -z "${{ORACLE_HOME:-}}" || ! -x "${{ORACLE_HOME}}/bin/sqlplus" ]]; then
-  ORACLE_HOME="$(ls -d /u01/app/oracle/product/*/db 2>/dev/null | head -1)"
+  ORACLE_HOME="$(ls -d /u01/app/oracle/product/*/db* 2>/dev/null | head -1)"
   export ORACLE_HOME
 fi
 {shell_body}
 """
-    cmd = ["nsenter", "-t", "1", "-m", "-p", "-i", "--", "su", "-", "oracle", "-c", script]
+    cmd = ["nsenter", "-t", "1", "-m", "-p", "-i", "--", "su", "-", "oracle", "-s", "/bin/bash"]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
-        return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+        proc = subprocess.run(
+            cmd,
+            input=script,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        out = proc.stdout.strip()
+        if "Last login:" in out:
+            out = out.split("Last login:", 1)[0].strip()
+        return proc.returncode, out, proc.stderr.strip()
     except subprocess.TimeoutExpired:
         return 124, "", "Zaman asimi"
     except FileNotFoundError:
         return 127, "", "nsenter bulunamadi"
 
 
+def _parse_sqlplus_output(out: str) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    lines: list[str] = []
+    for ln in out.splitlines():
+        clean = ln.strip()
+        if not clean:
+            continue
+        if clean.startswith("Last login:"):
+            continue
+        if re.match(r"^[\s\-|]+$", clean):
+            continue
+        lines.append(clean)
+    if not lines:
+        return rows
+    if len(lines) == 1:
+        return [{ "value": lines[0] }]
+
+    header_line = lines[0]
+    if "|" in header_line:
+        headers = [h.strip() for h in header_line.split("|")]
+        for line in lines[1:]:
+            parts = [p.strip() for p in line.split("|")]
+            if len(parts) == len(headers):
+                rows.append(dict(zip(headers, parts)))
+        return rows
+
+    header = header_line.strip()
+    for line in lines[1:]:
+        val = line.strip()
+        if val:
+            rows.append({header: val})
+    return rows
+
+
 def _sqlplus_csv(oracle_sid: str, sql: str, timeout: int = 120) -> tuple[bool, list[dict[str, str]], str]:
     sql_clean = sql.strip().rstrip(";")
     body = f'''
-"$ORACLE_HOME/bin/sqlplus" -s /nolog <<'SQLEOF'
+"$ORACLE_HOME/bin/sqlplus" -s / as sysdba <<'SQLEOF'
 whenever sqlerror exit sql.sqlcode
-conn / as sysdba
 set pagesize 5000 feedback off heading on trimspool on linesize 4000 colsep '|'
-{sql_clean}
+{sql_clean};
 exit
 SQLEOF
 '''
     code, out, err = _run_as_oracle(oracle_sid, body, timeout=timeout)
     if code != 0:
         return False, [], err or out or f"sqlplus exit {code}"
-    rows: list[dict[str, str]] = []
-    lines = [ln for ln in out.splitlines() if ln.strip() and not ln.strip().startswith("-")]
-    if len(lines) < 2:
-        return True, [], ""
-    headers = [h.strip() for h in lines[0].split("|")]
-    for line in lines[1:]:
-        parts = [p.strip() for p in line.split("|")]
-        if len(parts) != len(headers):
-            continue
-        rows.append(dict(zip(headers, parts)))
-    return True, rows, ""
-
-
+    rows = _parse_sqlplus_output(out)
     return True, rows, ""
 
 
