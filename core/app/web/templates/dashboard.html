@@ -502,7 +502,7 @@
 
   setInterval(async function () {
     try {
-      const res = await fetch((window.__YEDEK_BASE__ || '') + '/api/server/clock');
+      const res = await fetch((window.yedekAssetBase ? window.yedekAssetBase() : (window.__YEDEK_BASE__ || '')) + '/api/server/clock');
       const data = await res.json();
       if (data.ok && data.clock_epoch) {
         epoch = data.clock_epoch;

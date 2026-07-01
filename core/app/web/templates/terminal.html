@@ -36,5 +36,7 @@
 </div>
 {% endblock %}
 {% block extra_scripts %}
-<script src="{{ static_url('/static/terminal.js', request) }}?v=6"></script>
+<script src="{{ static_url('/static/vendor/xterm.min.js', request) }}?v=2"></script>
+<script src="{{ static_url('/static/vendor/addon-fit.min.js', request) }}?v=2"></script>
+<script src="{{ static_url('/static/terminal.js', request) }}?v=7"></script>
 {% endblock %}

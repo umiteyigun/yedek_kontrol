@@ -41,7 +41,7 @@
     }
     modal.showModal();
 
-    fetch((window.__YEDEK_BASE__ || '') + '/api/log/content?' + params.toString(), { credentials: 'same-origin' })
+    fetch((window.yedekAssetBase ? window.yedekAssetBase() : (window.__YEDEK_BASE__ || '')) + '/api/log/content?' + params.toString(), { credentials: 'same-origin' })
       .then(function (response) {
         return response.json().then(function (data) {
           return { response: response, data: data };

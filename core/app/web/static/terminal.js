@@ -32,6 +32,9 @@
   };
 
   function assetBase() {
+    if (typeof window.yedekAssetBase === "function") {
+      return window.yedekAssetBase();
+    }
     return window.__YEDEK_BASE__ || "";
   }
 

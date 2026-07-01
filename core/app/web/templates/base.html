@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Yedek Panel{% endblock %}</title>
-  <script>window.__YEDEK_BASE__={{ (request.headers.get('x-yedek-central-proxy-prefix') or '')|tojson }};</script>
+  <meta name="yedek-proxy-prefix" content="{{ request.headers.get('x-yedek-central-proxy-prefix') or '' }}">
+  <script src="{{ static_url('/static/panel-base.js', request) }}"></script>
   <link rel="stylesheet" href="{{ static_url('/static/style.css', request) }}">
   {% if user %}<link rel="stylesheet" href="{{ static_url('/static/pages.css', request) }}">{% endif %}
   {% block extra_head %}{% endblock %}

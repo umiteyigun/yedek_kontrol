@@ -256,7 +256,7 @@
       testResult.textContent = 'Test ediliyor...';
       const data = new FormData(form);
       try {
-        const res = await fetch((window.__YEDEK_BASE__ || '') + '/sistem/ldap/test', { method: 'POST', body: data });
+        const res = await fetch((window.yedekAssetBase ? window.yedekAssetBase() : (window.__YEDEK_BASE__ || '')) + '/sistem/ldap/test', { method: 'POST', body: data });
         const json = await res.json();
         testResult.textContent = json.message || (json.ok ? 'OK' : 'Hata');
         testResult.className = 'form-hint ' + (json.ok ? 'ok' : 'error');

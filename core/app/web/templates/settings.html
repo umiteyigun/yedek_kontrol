@@ -729,7 +729,7 @@
     });
   }
 
-  const yedekBase = window.__YEDEK_BASE__ || '';
+  const yedekBase = (window.yedekAssetBase ? window.yedekAssetBase() : (window.__YEDEK_BASE__ || ''));
 
   async function loadSchemaPickerList() {
     if (!schemaState.instanceId || schemaState.loading) {
