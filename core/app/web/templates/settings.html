@@ -224,7 +224,7 @@
               <label>Uzak FTP IP <input type="text" name="localftpip" value="{{ inst.localftpip }}" placeholder="ornek: 10.0.0.50" {% if inst.enabled %}required{% endif %}></label>
               <label>Uzak FTP Kullanici <input type="text" name="localftpuser" value="{{ inst.localftpuser }}" {% if inst.enabled %}required{% endif %}></label>
               <label>Uzak FTP Sifre <input type="password" name="localftppass" placeholder="Mevcut: {{ inst.masked_ftp_pass }}" {% if inst.enabled and not inst.masked_ftp_pass %}required{% endif %}></label>
-              <label class="full">Uzak FTP Dizin <input type="text" name="localftpdir" value="{{ inst.localftpdir or '/' }}" placeholder="/yedek"></label>
+              <label class="full">Uzak FTP Dizin <input type="text" name="localftpdir" value="{{ inst.localftpdir if inst.localftpdir and inst.localftpdir != '/' else '' }}" placeholder="/yedek veya /"></label>
               <p class="form-hint full">Sunucudaki hedef klasor. Varsayilan <strong>/</strong> (kok dizin).</p>
               <label>Saklama (gun) <input type="number" min="1" max="365" name="retention_days" value="{{ inst.retention_days if inst.retention_days > 0 else 2 }}" {% if inst.enabled %}required{% endif %}></label>
             </div>

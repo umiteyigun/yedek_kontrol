@@ -1,5 +1,14 @@
 (function () {
   const yedekBase = window.yedekAssetBase ? window.yedekAssetBase() : "";
+
+  function normalizeFtpPath(path) {
+    var text = String(path || "").trim();
+    if (!text || text === ".") return "/";
+    if (/^\/o\/[a-z0-9][a-z0-9_-]*\/n\/[0-9a-f-]{36}\/?$/i.test(text)) return "/";
+    if (!text.startsWith("/")) text = "/" + text;
+    return text.replace(/\/+/g, "/");
+  }
+
   const tabs = document.querySelectorAll('.instance-tab');
   const panels = document.querySelectorAll('.instance-tab-panel');
 
@@ -423,7 +432,7 @@
       host: (form.querySelector('[name="localftpip"]') || {}).value || '',
       user: (form.querySelector('[name="localftpuser"]') || {}).value || '',
       password: (form.querySelector('[name="localftppass"]') || {}).value || '',
-      baseDir: (form.querySelector('[name="localftpdir"]') || {}).value || '/',
+      baseDir: normalizeFtpPath((form.querySelector('[name="localftpdir"]') || {}).value || '/'),
     };
   }
 
@@ -622,7 +631,7 @@
       return;
     }
 
-    const targetPath = path || creds.baseDir || '/';
+    const targetPath = normalizeFtpPath(path || creds.baseDir || '/');
     ftpState.loading = true;
     ftpState.path = targetPath;
     ftpStatus.textContent = 'Baglaniliyor...';

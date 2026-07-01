@@ -15,6 +15,10 @@ DEFAULT_TIMEOUT = 15
 PROTECTED_NEWEST_COUNT = 5
 BACKUP_DATE_RE = re.compile(r"(?:GUNLUKYEDEK|HAFTALIKYEDEK)(\d{10})", re.IGNORECASE)
 FILENAME_INLINE_DATE_RE = re.compile(r"-(\d{12,14})-")
+_HUB_PROXY_PATH_RE = re.compile(
+    r"^/o/[a-z0-9][a-z0-9_-]*/n/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/?$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -46,6 +50,8 @@ def parse_host(host: str, default_port: int = 21) -> tuple[str, int]:
 
 def _normalize_path(path: str) -> str:
     cleaned = (path or "/").strip().replace("\\", "/")
+    if _HUB_PROXY_PATH_RE.match(cleaned):
+        return "/"
     if not cleaned or cleaned == ".":
         return "/"
     if not cleaned.startswith("/"):
