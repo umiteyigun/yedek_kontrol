@@ -13,6 +13,7 @@ from app.config.applier import ConfigApplier
 from app.config.store import ConfigStore
 from app.routes import api, backups, panel, rman, system, tablespaces, terminal
 from app.services.central_proxy_auth import CENTRAL_PROXY_SECRET, MIN_CENTRAL_PROXY_SECRET_LEN
+from app.services.local_roles import LocalRoleStore
 from app.services.local_users import LocalUserStore
 from app.services.backup_schedule import BackupScheduleService
 from app.services.ftp import DynamicFTPService
@@ -46,6 +47,7 @@ async def lifespan(app: FastAPI):
     rman_schedule = RmanScheduleService(store, BACKUP_TRIGGER)
     session_store = SessionStore(CONFIG_DIR / "sessions.json")
     local_user_store = LocalUserStore(CONFIG_DIR / "local_users.json")
+    local_role_store = LocalRoleStore(CONFIG_DIR / "local_roles.json")
 
     settings_file = CONFIG_DIR / "settings.json"
     if not settings_file.exists() and HOST_YEDEKCONFIG.exists():
@@ -85,6 +87,7 @@ async def lifespan(app: FastAPI):
     app.state.rman_schedule = rman_schedule
     app.state.session_store = session_store
     app.state.local_user_store = local_user_store
+    app.state.local_role_store = local_role_store
 
     logger.info(
         "yedek-core hazir | config v%s | %s instance",

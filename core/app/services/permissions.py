@@ -109,9 +109,12 @@ def resolve_permissions(
     role: str,
     username: str,
     local_user_store: Any | None,
+    local_role_store: Any | None = None,
 ) -> dict[str, dict[str, bool]]:
-    if auth_method == "local" and local_user_store is not None:
-        row = local_user_store.get_user(username)
+    if auth_method == "local":
+        if local_role_store is not None:
+            return local_role_store.get_permissions(role)
+        row = local_user_store.get_user(username) if local_user_store else None
         if row and row.get("permissions"):
             return normalize_permissions(row["permissions"])
     return permissions_for_role(role)
@@ -129,11 +132,13 @@ def get_request_permissions(request: Request) -> dict[str, dict[str, bool]]:
         perms = empty_permissions()
     else:
         local_store = getattr(request.app.state, "local_user_store", None)
+        role_store = getattr(request.app.state, "local_role_store", None)
         perms = resolve_permissions(
             auth_method=str(session.get("auth") or ""),
             role=str(session.get("role") or ROLE_LIMITED),
             username=str(session.get("user") or ""),
             local_user_store=local_store,
+            local_role_store=role_store,
         )
     request.state.effective_permissions = perms
     return perms

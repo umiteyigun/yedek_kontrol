@@ -314,11 +314,13 @@ def authorize_terminal_ws(websocket: WebSocket) -> TerminalAuth | None:
     )
     if session:
         local_store = getattr(websocket.app.state, "local_user_store", None)
+        role_store = getattr(websocket.app.state, "local_role_store", None)
         perms = resolve_permissions(
             auth_method=str(session.get("auth") or ""),
             role=str(session.get("role") or ""),
             username=str(session.get("user") or ""),
             local_user_store=local_store,
+            local_role_store=role_store,
         )
         if has_permission(perms, "terminal", "view"):
             user = str(session.get("user") or "")

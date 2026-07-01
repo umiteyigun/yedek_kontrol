@@ -14,8 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.config.ldap_config import ROLE_FULL, ROLE_LIMITED
-from app.services.permissions import normalize_permissions, permissions_for_role
+from app.config.ldap_config import ROLE_LIMITED
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +26,9 @@ PBKDF2_ITERATIONS = 200_000
 class LocalUserPublic:
     username: str
     role: str
+    role_label: str
     enabled: bool
     created_at: str
-    permissions: dict[str, dict[str, bool]]
 
 
 def _utc_now() -> str:
@@ -98,23 +97,32 @@ class LocalUserStore:
             row = self._users.get(clean)
             return dict(row) if row else None
 
-    def _public_permissions(self, row: dict[str, Any]) -> dict[str, dict[str, bool]]:
-        role = str(row.get("role") or ROLE_LIMITED)
-        if row.get("permissions"):
-            return normalize_permissions(row["permissions"])
-        return permissions_for_role(role)
+    def role_counts(self) -> dict[str, int]:
+        with self._lock:
+            counts: dict[str, int] = {}
+            for row in self._users.values():
+                role = str(row.get("role") or ROLE_LIMITED)
+                counts[role] = counts.get(role, 0) + 1
+            return counts
 
-    def list_users(self) -> list[LocalUserPublic]:
+    def count_users_with_role(self, role_id: str) -> int:
+        clean = (role_id or "").strip().lower()
+        with self._lock:
+            return sum(1 for row in self._users.values() if str(row.get("role") or "") == clean)
+
+    def list_users(self, role_labels: dict[str, str] | None = None) -> list[LocalUserPublic]:
+        labels = role_labels or {}
         with self._lock:
             rows = []
             for row in self._users.values():
+                role = str(row.get("role") or ROLE_LIMITED)
                 rows.append(
                     LocalUserPublic(
                         username=str(row.get("username", "")),
-                        role=str(row.get("role") or ROLE_LIMITED),
+                        role=role,
+                        role_label=labels.get(role, role),
                         enabled=bool(row.get("enabled", True)),
                         created_at=str(row.get("created_at") or ""),
-                        permissions=self._public_permissions(row),
                     )
                 )
             rows.sort(key=lambda item: item.username)
@@ -130,34 +138,24 @@ class LocalUserStore:
                 return None
             if not verify_password(password, str(row.get("password_hash") or "")):
                 return None
-            role = str(row.get("role") or ROLE_LIMITED)
-            if role not in {ROLE_FULL, ROLE_LIMITED}:
-                return None
-            return role
+            return str(row.get("role") or ROLE_LIMITED)
 
-    def add_user(
-        self,
-        username: str,
-        password: str,
-        role: str,
-        permissions: dict[str, dict[str, bool]] | None = None,
-    ) -> None:
+    def add_user(self, username: str, password: str, role: str) -> None:
         clean = username.strip().lower()
         if not USERNAME_RE.fullmatch(clean):
             raise ValueError("Kullanici adi 3-32 karakter; harf, rakam, . _ -")
         if len(password) < 6:
             raise ValueError("Sifre en az 6 karakter olmali")
-        if role not in {ROLE_FULL, ROLE_LIMITED}:
-            raise ValueError("Rol full veya limited olmali")
-        perms = normalize_permissions(permissions) if permissions is not None else permissions_for_role(role)
+        role_clean = role.strip().lower()
+        if not role_clean:
+            raise ValueError("Rol secilmeli")
         with self._lock:
             if clean in self._users:
                 raise ValueError("Bu kullanici adi zaten var")
             self._users[clean] = {
                 "username": clean,
                 "password_hash": hash_password(password),
-                "role": role,
-                "permissions": perms,
+                "role": role_clean,
                 "enabled": True,
                 "created_at": _utc_now(),
             }
@@ -170,7 +168,6 @@ class LocalUserStore:
         role: str | None = None,
         enabled: bool | None = None,
         password: str | None = None,
-        permissions: dict[str, dict[str, bool]] | None = None,
     ) -> None:
         clean = username.strip().lower()
         with self._lock:
@@ -178,17 +175,17 @@ class LocalUserStore:
             if not row:
                 raise ValueError("Kullanici bulunamadi")
             if role is not None:
-                if role not in {ROLE_FULL, ROLE_LIMITED}:
-                    raise ValueError("Rol full veya limited olmali")
-                row["role"] = role
+                role_clean = role.strip().lower()
+                if not role_clean:
+                    raise ValueError("Rol secilmeli")
+                row["role"] = role_clean
             if enabled is not None:
                 row["enabled"] = enabled
             if password:
                 if len(password) < 6:
                     raise ValueError("Sifre en az 6 karakter olmali")
                 row["password_hash"] = hash_password(password)
-            if permissions is not None:
-                row["permissions"] = normalize_permissions(permissions)
+            row.pop("permissions", None)
             self._persist()
 
     def delete_user(self, username: str) -> None:

@@ -16,7 +16,7 @@
       <div class="page-hero-text">
         <p class="dash-eyebrow">Guvenlik ve Erisim</p>
         <h1>Sistem Ayarlari</h1>
-        <p class="dash-sub">LDAP kimlik dogrulama ve yerel panel kullanicilari · {{ user }}</p>
+        <p class="dash-sub">LDAP kimlik dogrulama, yerel roller ve kullanicilar · {{ user }}</p>
       </div>
       <div class="page-hero-actions">
         <a href="/" class="btn-ghost btn-sm">Duruma Don</a>
@@ -144,35 +144,73 @@
       </div>
     </form>
 
-    <section class="form-section panel-3d settings-section-bottom reveal reveal-d2" id="local-users-block">
-      <legend class="section-legend">Yerel Kullanicilar</legend>
-      <p class="form-hint section-hint">
-        LDAP disinda panel icin kullanici tanimlayin. Sadece <strong>Yalnizca yerel</strong> veya
-        <strong>LDAP + yerel</strong> modunda giris yapilir.
-      </p>
+    <section class="form-section panel-3d settings-section-bottom reveal reveal-d2" id="local-roles-block">
+      <div class="panel-head-row">
+        <div>
+          <legend class="section-legend">Yerel Roller</legend>
+          <p class="form-hint section-hint">Izinler role baglidir. Kullanici olustururken rol secilir.</p>
+        </div>
+        {% if can_system_add %}
+        <button type="button" class="btn-glow btn-sm" id="role-add-open">+ Rol Ekle</button>
+        {% endif %}
+      </div>
 
-      {% if can_system_add %}
-      <form method="post" action="/sistem/yerel/ekle" class="local-user-add-form" id="local-user-add-form">
-        <div class="form-grid">
-          <label>Kullanici adi
-            <input type="text" name="username" required pattern="[a-zA-Z0-9._-]{3,32}" autocomplete="off" placeholder="ornek: yedek.op">
-          </label>
-          <label>Sifre
-            <input type="password" name="password" required minlength="6" autocomplete="new-password">
-          </label>
-          <label>Rol (varsayilan izinler)
-            <select name="role" id="local-add-role">
-              <option value="limited">Sinirli (yedek operatoru)</option>
-              <option value="full">Tam yetki (admins)</option>
-            </select>
-          </label>
-        </div>
-        {{ permission_matrix() }}
-        <div class="form-actions instance-form-actions">
-          <button type="submit" class="btn-glow btn-sm">Kullanici Ekle</button>
-        </div>
-      </form>
+      {% if local_roles %}
+      <div class="table-wrap local-users-table">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Rol</th>
+              <th>Kod</th>
+              <th>Tip</th>
+              <th>Kullanici</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in local_roles %}
+            <tr>
+              <td><strong>{{ row.label }}</strong></td>
+              <td><code>{{ row.role_id }}</code></td>
+              <td>{% if row.builtin %}Sistem{% else %}Ozel{% endif %}</td>
+              <td>{{ row.user_count }}</td>
+              <td class="row-actions">
+                {% if can_system_edit %}
+                <button
+                  type="button"
+                  class="btn-ghost btn-sm role-edit-open"
+                  data-role-id="{{ row.role_id }}"
+                  data-label="{{ row.label }}"
+                  data-builtin="{{ '1' if row.builtin else '0' }}"
+                >Duzenle</button>
+                {% endif %}
+                {% if can_system_delete and not row.builtin %}
+                <form method="post" action="/sistem/rol/{{ row.role_id }}/sil" class="inline-form" onsubmit="return confirm('{{ row.label }} silinsin mi?');">
+                  <button type="submit" class="btn-danger btn-sm" {% if row.user_count > 0 %}disabled title="Once kullanicilari degistirin"{% endif %}>Sil</button>
+                </form>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
       {% endif %}
+    </section>
+
+    <section class="form-section panel-3d settings-section-bottom reveal reveal-d2" id="local-users-block">
+      <div class="panel-head-row">
+        <div>
+          <legend class="section-legend">Yerel Kullanicilar</legend>
+          <p class="form-hint section-hint">
+            LDAP disinda panel icin kullanici tanimlayin. Sadece <strong>Yalnizca yerel</strong> veya
+            <strong>LDAP + yerel</strong> modunda giris yapilir.
+          </p>
+        </div>
+        {% if can_system_add %}
+        <button type="button" class="btn-glow btn-sm" id="user-add-open">+ Kullanici Ekle</button>
+        {% endif %}
+      </div>
 
       {% if local_users %}
       <div class="table-wrap local-users-table">
@@ -190,31 +228,18 @@
             {% for row in local_users %}
             <tr>
               <td><code>{{ row.username }}</code></td>
-              <td>{% if row.role == 'full' %}Tam yetki{% else %}Sinirli{% endif %}</td>
+              <td>{{ row.role_label }}</td>
               <td>{% if row.enabled %}<span class="status-pill ok"><span class="pulse"></span>Aktif</span>{% else %}Pasif{% endif %}</td>
               <td class="muted">{{ row.created_at[:19] if row.created_at else '—' }}</td>
               <td class="row-actions">
                 {% if can_system_edit %}
-                <details class="inline-details">
-                  <summary class="btn-ghost btn-sm">Duzenle</summary>
-                  <form method="post" action="/sistem/yerel/{{ row.username }}/guncelle" class="local-user-edit-form">
-                    <label>Rol
-                      <select name="role" class="local-edit-role">
-                        <option value="limited" {% if row.role != 'full' %}selected{% endif %}>Sinirli</option>
-                        <option value="full" {% if row.role == 'full' %}selected{% endif %}>Tam yetki</option>
-                      </select>
-                    </label>
-                    <label class="checkbox-row">
-                      <input type="checkbox" name="enabled" value="1" {% if row.enabled %}checked{% endif %}>
-                      Aktif
-                    </label>
-                    <label>Yeni sifre (bos = degismez)
-                      <input type="password" name="password" autocomplete="new-password">
-                    </label>
-                    {{ permission_matrix(row.permissions) }}
-                    <button type="submit" class="btn-ghost btn-sm">Kaydet</button>
-                  </form>
-                </details>
+                <button
+                  type="button"
+                  class="btn-ghost btn-sm user-edit-open"
+                  data-username="{{ row.username }}"
+                  data-role="{{ row.role }}"
+                  data-enabled="{{ '1' if row.enabled else '0' }}"
+                >Duzenle</button>
                 {% endif %}
                 {% if can_system_delete %}
                 <form method="post" action="/sistem/yerel/{{ row.username }}/sil" class="inline-form" onsubmit="return confirm('{{ row.username }} silinsin mi?');">
@@ -233,6 +258,63 @@
     </section>
   </div>
 </div>
+
+<dialog id="role-modal" class="schedule-modal sistem-modal sistem-modal-wide">
+  <form method="post" action="/sistem/rol/ekle" class="schedule-modal-form" id="role-modal-form">
+    <div class="schedule-modal-head">
+      <h3 id="role-modal-title">Rol Ekle</h3>
+      <button type="button" class="btn-ghost btn-sm sistem-modal-close">Kapat</button>
+    </div>
+    <div class="form-grid">
+      <label id="role-id-wrap">Rol kodu
+        <input type="text" name="role_id" id="role-id-input" required pattern="[a-z][a-z0-9_-]{2,31}" placeholder="ornek: yedek-op" autocomplete="off">
+      </label>
+      <label>Rol adi
+        <input type="text" name="label" id="role-label-input" required minlength="2" placeholder="Ornek: Yedek Operatoru">
+      </label>
+    </div>
+    <p class="form-hint">Modul izinleri</p>
+    <div id="role-perm-host">{{ permission_matrix() }}</div>
+    <div class="form-actions instance-form-actions">
+      <button type="submit" class="btn-glow btn-sm" id="role-modal-submit">Kaydet</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="user-modal" class="schedule-modal sistem-modal">
+  <form method="post" action="/sistem/yerel/ekle" class="schedule-modal-form" id="user-modal-form">
+    <div class="schedule-modal-head">
+      <h3 id="user-modal-title">Kullanici Ekle</h3>
+      <button type="button" class="btn-ghost btn-sm sistem-modal-close">Kapat</button>
+    </div>
+    <div class="form-grid">
+      <label id="user-name-wrap">Kullanici adi
+        <input type="text" name="username" id="user-name-input" required pattern="[a-zA-Z0-9._-]{3,32}" autocomplete="off" placeholder="ornek: yedek.op">
+      </label>
+      <label id="user-pass-wrap">Sifre
+        <input type="password" name="password" id="user-pass-input" required minlength="6" autocomplete="new-password">
+      </label>
+      <label>Rol
+        <select name="role" id="user-role-select" required>
+          {% for row in local_roles %}
+          <option value="{{ row.role_id }}">{{ row.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="checkbox-row full" id="user-enabled-wrap" hidden>
+        <input type="checkbox" name="enabled" id="user-enabled-input" value="1" checked>
+        Aktif
+      </label>
+      <label class="full" id="user-pass-edit-wrap" hidden>
+        Yeni sifre (bos = degismez)
+        <input type="password" name="password" id="user-pass-edit-input" autocomplete="new-password">
+      </label>
+    </div>
+    <div class="form-actions instance-form-actions">
+      <button type="submit" class="btn-glow btn-sm" id="user-modal-submit">Kaydet</button>
+    </div>
+  </form>
+</dialog>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -240,5 +322,6 @@
   data-date="{{ host_clock.clock_date|e }}"
   data-time="{{ host_clock.clock_time|e }}"></div>
 <script type="application/json" id="role-perm-presets">{{ role_perm_presets_json|safe }}</script>
+<script type="application/json" id="local-roles-data">{{ local_roles_json|safe }}</script>
 <script src="{{ static_url('/static/sistem-page.js', request) }}" defer></script>
 {% endblock %}

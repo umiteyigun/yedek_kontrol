@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from app.web.templates_env import templates
 
 from app.auth import can, get_current_user, login_redirect, permission_denied_redirect
-from app.config.ldap_config import LDAP_SETTINGS_DEFAULTS, ROLE_FULL, ROLE_LIMITED
+from app.config.ldap_config import LDAP_SETTINGS_DEFAULTS, ROLE_LIMITED
 from app.config.models import YedekSettings
 from app.routes.context import page_context
 from app.services.ldap_auth import test_ldap_connection
@@ -71,6 +71,10 @@ def system_page(request: Request):
 
     store = request.app.state.store
     local_store = request.app.state.local_user_store
+    role_store = request.app.state.local_role_store
+    user_counts = local_store.role_counts()
+    roles = role_store.list_roles(user_counts)
+    role_labels = {row.role_id: row.label for row in roles}
     settings = store.get()
     ctx = page_context(
         request,
@@ -82,7 +86,8 @@ def system_page(request: Request):
         {
             "auth_mode_labels": AUTH_MODE_LABELS,
             "ldap_defaults": LDAP_SETTINGS_DEFAULTS,
-            "local_users": local_store.list_users(),
+            "local_roles": roles,
+            "local_users": local_store.list_users(role_labels),
             "ldap_has_bind_password": bool(settings.ldap_bind_password),
             "timezone_options": list_host_timezones(),
             "host_clock": collect_host_clock(),
@@ -90,6 +95,18 @@ def system_page(request: Request):
             "permission_module_order": MODULE_ORDER,
             "permission_action_labels": ACTION_LABELS,
             "role_perm_presets_json": json.dumps(ROLE_DEFAULTS, ensure_ascii=False),
+            "local_roles_json": json.dumps(
+                [
+                    {
+                        "role_id": r.role_id,
+                        "label": r.label,
+                        "builtin": r.builtin,
+                        "permissions": r.permissions,
+                    }
+                    for r in roles
+                ],
+                ensure_ascii=False,
+            ),
             "can_system_edit": can(request, "system", "edit"),
             "can_system_add": can(request, "system", "add"),
             "can_system_delete": can(request, "system", "delete"),
@@ -147,11 +164,13 @@ async def system_local_add(request: Request):
     username = str(form.get("username", ""))
     password = str(form.get("password", ""))
     role = str(form.get("role", ROLE_LIMITED))
-    permissions = parse_permissions_from_form(form)
 
     local_store = request.app.state.local_user_store
+    role_store = request.app.state.local_role_store
     try:
-        local_store.add_user(username, password, role, permissions)
+        if not role_store.role_exists(role):
+            raise ValueError("Gecersiz rol")
+        local_store.add_user(username, password, role)
     except ValueError as exc:
         return RedirectResponse(url=f"/sistem?error={quote_plus(str(exc))}", status_code=303)
 
@@ -169,16 +188,17 @@ async def system_local_update(request: Request, username: str):
     role = str(form.get("role", ""))
     enabled = str(form.get("enabled", ""))
     password = str(form.get("password", ""))
-    permissions = parse_permissions_from_form(form)
 
     local_store = request.app.state.local_user_store
+    role_store = request.app.state.local_role_store
     try:
+        if role and not role_store.role_exists(role):
+            raise ValueError("Gecersiz rol")
         local_store.update_user(
             username,
             role=role or None,
             enabled=(enabled == "1") if enabled else None,
             password=password or None,
-            permissions=permissions,
         )
     except ValueError as exc:
         return RedirectResponse(url=f"/sistem?error={quote_plus(str(exc))}", status_code=303)
@@ -200,6 +220,60 @@ async def system_local_delete(request: Request, username: str):
         return RedirectResponse(url=f"/sistem?error={quote_plus(str(exc))}", status_code=303)
 
     return RedirectResponse(url="/sistem?message=Kullanici+silindi", status_code=303)
+
+
+@router.post("/sistem/rol/ekle")
+async def system_role_add(request: Request):
+    if not get_current_user(request):
+        return login_redirect()
+    if not can(request, "system", "add"):
+        return permission_denied_redirect("system")
+
+    form = await request.form()
+    role_id = str(form.get("role_id", ""))
+    label = str(form.get("label", ""))
+    permissions = parse_permissions_from_form(form)
+    role_store = request.app.state.local_role_store
+    try:
+        role_store.add_role(role_id, label, permissions)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/sistem?error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url="/sistem?message=Rol+eklendi", status_code=303)
+
+
+@router.post("/sistem/rol/{role_id}/guncelle")
+async def system_role_update(request: Request, role_id: str):
+    if not get_current_user(request):
+        return login_redirect()
+    if not can(request, "system", "edit"):
+        return permission_denied_redirect("system")
+
+    form = await request.form()
+    label = str(form.get("label", ""))
+    permissions = parse_permissions_from_form(form)
+    role_store = request.app.state.local_role_store
+    try:
+        role_store.update_role(role_id, label=label or None, permissions=permissions)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/sistem?error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url="/sistem?message=Rol+guncellendi", status_code=303)
+
+
+@router.post("/sistem/rol/{role_id}/sil")
+async def system_role_delete(request: Request, role_id: str):
+    if not get_current_user(request):
+        return login_redirect()
+    if not can(request, "system", "delete"):
+        return permission_denied_redirect("system")
+
+    local_store = request.app.state.local_user_store
+    role_store = request.app.state.local_role_store
+    in_use = local_store.count_users_with_role(role_id) > 0
+    try:
+        role_store.delete_role(role_id, in_use=in_use)
+    except ValueError as exc:
+        return RedirectResponse(url=f"/sistem?error={quote_plus(str(exc))}", status_code=303)
+    return RedirectResponse(url="/sistem?message=Rol+silindi", status_code=303)
 
 
 @router.post("/sistem/saat-dilimi")

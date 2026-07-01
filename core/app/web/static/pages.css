@@ -1943,6 +1943,30 @@ body.page-tablespace .dash-canvas { overflow-x: hidden; }
 .local-user-edit-form .perm-matrix-wrap { margin-top: 0.75rem; }
 .local-user-edit-form { min-width: min(100%, 560px); padding: 0.75rem 0; }
 
+.sistem-modal-wide {
+  width: min(760px, calc(100vw - 2rem));
+}
+
+.sistem-modal .perm-matrix-wrap {
+  margin: 0.5rem 0 0.75rem;
+  max-height: 50vh;
+  overflow: auto;
+}
+
+#local-roles-block .panel-head-row,
+#local-users-block .panel-head-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+#local-roles-block .section-legend,
+#local-users-block .section-legend {
+  margin-bottom: 0.25rem;
+}
+
 .ts-instance-tabs {
   margin-bottom: 0;
   justify-content: flex-end;

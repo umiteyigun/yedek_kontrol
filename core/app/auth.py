@@ -196,8 +196,11 @@ def authenticate(request: Request, username: str, password: str) -> tuple[bool, 
 
     if auth_mode in ("local", "ldap_and_local"):
         local_store = getattr(request.app.state, "local_user_store", None)
+        role_store = getattr(request.app.state, "local_role_store", None)
         if local_store:
             role = local_store.verify(username, password)
+            if role and role_store and not role_store.role_exists(role):
+                role = None
             if role:
                 _login_attempts.pop(ip, None)
                 return True, "local", role
