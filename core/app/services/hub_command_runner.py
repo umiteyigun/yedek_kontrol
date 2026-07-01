@@ -68,14 +68,15 @@ fi
             cmd,
             input=script,
             capture_output=True,
-            text=True,
+            text=False,
             timeout=timeout,
             check=False,
         )
-        out = proc.stdout.strip()
+        out = proc.stdout.decode("utf-8", errors="replace").strip()
+        err = proc.stderr.decode("utf-8", errors="replace").strip()
         if "Last login:" in out:
             out = out.split("Last login:", 1)[0].strip()
-        return proc.returncode, out, proc.stderr.strip()
+        return proc.returncode, out, err
     except subprocess.TimeoutExpired:
         return 124, "", "Zaman asimi"
     except FileNotFoundError:
@@ -688,7 +689,7 @@ SELECT * FROM (
   WHERE c.constraint_type = 'R'
     AND NOT EXISTS (
       SELECT 1 FROM dba_ind_columns ic
-      JOIN dba_indexes i ON ic.index_name = i.index_name AND ic.owner = i.owner
+      JOIN dba_indexes i ON ic.index_name = i.index_name AND ic.index_owner = i.owner
       WHERE ic.table_owner = cc.owner AND ic.table_name = cc.table_name
         AND ic.column_name = cc.column_name AND i.index_type != 'LOB'
     )
