@@ -13,6 +13,7 @@ import websockets
 from agent.config import AgentSettings, load_settings, save_registration
 from agent.local_proxy import LocalProxy
 from agent.metrics import metrics_loop, send_metrics_report
+from agent.tunnel_tcp import TunnelTcpManager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("yedek-agent")
@@ -51,6 +52,7 @@ async def ensure_registered(settings: AgentSettings) -> AgentSettings:
 async def run_agent() -> None:
     settings = await ensure_registered(load_settings())
     proxy = LocalProxy(settings.panel_local_url, settings.verify_tls)
+    tunnels = TunnelTcpManager()
     await proxy.start()
 
     ssl_ctx = None
@@ -137,9 +139,19 @@ async def run_agent() -> None:
                             await proxy.handle_ws_frame(msg)
                         elif mtype == "proxy_ws_close":
                             await proxy.handle_ws_close(msg.get("id", ""))
+                        elif mtype == "tunnel_open":
+                            await tunnels.handle_open(
+                                msg,
+                                lambda payload: ws.send(json.dumps(payload)),
+                            )
+                        elif mtype == "tunnel_data":
+                            await tunnels.handle_data(msg)
+                        elif mtype == "tunnel_close":
+                            await tunnels.handle_close(msg)
                 finally:
                     hb.cancel()
                     metrics.cancel()
+                    await tunnels.close_all()
         except Exception as exc:
             logger.warning("Baglanti koptu: %s — 5s sonra yeniden", exc)
             await asyncio.sleep(5)
