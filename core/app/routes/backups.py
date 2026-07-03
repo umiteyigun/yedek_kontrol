@@ -23,7 +23,7 @@ def log_content_api(
 ):
     if not get_current_user(request):
         return JSONResponse({"ok": False, "error": "Oturum gerekli"}, status_code=401)
-    if not can(request, "backups", "delete"):
+    if not can(request, "backups", "view"):
         return JSONResponse({"ok": False, "error": "Log goruntuleme icin yetki gerekli"}, status_code=403)
 
     settings = request.app.state.store.get()
@@ -120,7 +120,7 @@ def start_backup(
 def view_log(request: Request, name: str):
     if not get_current_user(request):
         return login_redirect()
-    if not can(request, "backups", "delete"):
+    if not can(request, "backups", "view"):
         return RedirectResponse(url="/yedekler?error=Log+goruntuleme+icin+yetki+gerekli", status_code=303)
 
     settings = request.app.state.store.get()

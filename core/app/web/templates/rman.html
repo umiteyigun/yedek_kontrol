@@ -90,14 +90,14 @@
     {% elif rman_status.state == 'done' %}
     <div class="status-banner done panel-3d reveal reveal-d2">
       Son RMAN yedegi tamamlandi: <strong>{{ rman_status.updated_at }}</strong>
-      {% if can_rman_delete and rman_status.log_file %}
+      {% if can_view_rman and rman_status.log_file %}
       — <button type="button" class="btn-log-view btn-ghost btn-sm" data-log-source="panel" data-log-name="{{ rman_status.log_file }}">Panel logu</button>
       {% endif %}
     </div>
     {% elif rman_status.state == 'failed' %}
     <div class="status-banner failed panel-3d reveal reveal-d2">
       RMAN yedegi basarisiz (exit {{ rman_status.exit_code }}).
-      {% if can_rman_delete and rman_status.log_file %}
+      {% if can_view_rman and rman_status.log_file %}
       <button type="button" class="btn-log-view" data-log-source="panel" data-log-name="{{ rman_status.log_file }}">Logu ac</button>
       {% endif %}
     </div>
@@ -258,7 +258,7 @@
               <td>{{ row.piece_count }}</td>
               <td>{{ row.size_mb }} MB</td>
               <td class="row-actions">
-                {% if row.log_name and can_rman_delete %}
+                {% if row.log_name and can_view_rman %}
                 <button type="button" class="btn-ghost btn-sm btn-log-view" data-log-source="rman" data-log-name="{{ row.run_id }}" data-log-instance="{{ active_instance_id }}">Log</button>
                 {% endif %}
                 {% if can_rman_delete %}

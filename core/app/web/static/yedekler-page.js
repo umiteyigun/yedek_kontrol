@@ -28,6 +28,29 @@
     box.addEventListener("change", updateCount);
   });
 
+  var ftpBtn = document.getElementById("ftp-resend-btn");
+  if (ftpBtn) {
+    ftpBtn.addEventListener("click", function (event) {
+      var n = document.querySelectorAll(".backup-select:checked").length;
+      if (!n) {
+        event.preventDefault();
+        alert("FTP icin en az bir yedek secin.");
+        return;
+      }
+      if (!confirm(n + " yedek FTP sunucusuna tekrar gonderilsin mi?")) {
+        event.preventDefault();
+      }
+    });
+  }
+
+  document.querySelectorAll(".backup-delete-btn").forEach(function (btn) {
+    btn.addEventListener("click", function (event) {
+      if (!confirm("Bu yedegi silmek istediginize emin misiniz?")) {
+        event.preventDefault();
+      }
+    });
+  });
+
   window.confirmFtpResend = function () {
     var n = document.querySelectorAll(".backup-select:checked").length;
     if (!n) {

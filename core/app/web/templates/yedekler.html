@@ -1,8 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Yedekler — Yedek Panel{% endblock %}
 {% block extra_head %}
-<link rel="stylesheet" href="/static/dashboard.css">
-<link rel="stylesheet" href="/static/pages.css">
+<link rel="stylesheet" href="{{ static_url('/static/dashboard.css', request) }}">
 {% endblock %}
 {% block body_class %}page-yedekler{% endblock %}
 {% block content %}
@@ -21,25 +20,25 @@
       </div>
       <div class="page-hero-actions">
         {% if can_backup_add %}
-        <form method="post" action="/yedekler/baslat" class="inline-form">
+        <form method="post" action="{{ panel_url('/yedekler/baslat', request) }}" class="inline-form">
           <input type="hidden" name="tip" value="GUNLUK">
           <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
           <button type="submit" class="btn-glow" {% if status.state == 'running' %}disabled{% endif %}>Gunluk Yedek</button>
         </form>
-        <form method="post" action="/yedekler/baslat" class="inline-form">
+        <form method="post" action="{{ panel_url('/yedekler/baslat', request) }}" class="inline-form">
           <input type="hidden" name="tip" value="HAFTALIK">
           <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
           <button type="submit" class="btn-ghost" {% if status.state == 'running' %}disabled{% endif %}>Haftalik</button>
         </form>
         {% endif %}
-        <a href="/" class="btn-ghost btn-sm">Duruma Don</a>
+        <a href="{{ panel_url('/', request) }}" class="btn-ghost btn-sm">Duruma Don</a>
       </div>
     </header>
 
     {% if instances|length > 1 %}
     <nav class="instance-tabs reveal reveal-d1">
       {% for inst in instances %}
-      <a href="/yedekler?instance={{ inst.id }}" class="instance-tab {% if inst.id == active_instance_id %}active{% endif %}">
+      <a href="{{ panel_url('/yedekler', request) }}?instance={{ inst.id }}" class="instance-tab {% if inst.id == active_instance_id %}active{% endif %}">
         {{ inst.display_name }} <span>{{ inst.oracle_sid }}</span>
       </a>
       {% endfor %}
@@ -78,14 +77,14 @@
     {% elif status.state == 'done' %}
     <div class="status-banner done panel-3d reveal reveal-d2">
       Son yedek tamamlandi: <strong>{{ status.updated_at }}</strong>
-      {% if can_backup_delete and status.log_file %}
+      {% if can_view_backups and status.log_file %}
       — <button type="button" class="btn-log-view btn-ghost btn-sm" data-log-source="panel" data-log-name="{{ status.log_file }}">Log</button>
       {% endif %}
     </div>
     {% elif status.state == 'failed' %}
     <div class="status-banner failed panel-3d reveal reveal-d2">
       Son yedek basarisiz (cikis: {{ status.exit_code }}).
-      {% if can_backup_delete and status.log_file %}
+      {% if can_view_backups and status.log_file %}
       <button type="button" class="btn-log-view" data-log-source="panel" data-log-name="{{ status.log_file }}">Logu ac</button>
       {% endif %}
     </div>
@@ -102,7 +101,7 @@
       </div>
 
       {% if backups %}
-      <form method="post" action="/yedekler/ftp-gonder" id="ftp-resend-form">
+      <form method="post" action="{{ panel_url('/yedekler/ftp-gonder', request) }}" id="ftp-resend-form">
         <input type="hidden" name="instance_id" value="{{ active_instance_id }}">
         {% if can_backup_edit and active_instance.ftp_upload_enabled %}
         <div class="backup-bulk-bar">
@@ -114,7 +113,6 @@
             type="submit"
             class="btn-glow btn-sm"
             id="ftp-resend-btn"
-            onclick="return confirmFtpResend();"
           >FTP'ye Tekrar Gonder</button>
           <span class="muted backup-selected-count" id="backup-selected-count">0 secili</span>
         </div>
@@ -148,17 +146,16 @@
                 <td>{{ item.mtime }}</td>
                 <td>
                   <div class="row-actions">
-                    {% if can_backup_delete and item.has_log %}
-                    <button type="button" class="btn-ghost btn-sm btn-log-view" data-log-source="expdp" data-log-name="{{ item.log_name }}" data-log-instance="{{ active_instance_id }}">Log</button>
-                    {% elif can_backup_delete %}
+                    {% if can_view_backups and item.has_log %}
+                    <button type="button" class="btn-ghost btn-sm btn-log-view" data-log-source="expdp" data-log-name="{{ item.log_name }}" data-log-instance="{{ item.instance_id }}">Log</button>
+                    {% elif can_view_backups %}
                     <span class="muted" style="font-size:0.8rem;">Log yok</span>
                     {% endif %}
                     {% if can_backup_delete %}
                     <button
                       type="submit"
-                      class="btn-danger btn-sm"
+                      class="btn-danger btn-sm backup-delete-btn"
                       form="delete-form-{{ loop.index }}"
-                      onclick="return confirm('Bu yedegi silmek istediginize emin misiniz?');"
                     >Sil</button>
                     {% endif %}
                   </div>
@@ -173,7 +170,7 @@
       {% if can_backup_delete %}
       <form
         method="post"
-        action="/yedekler/sil"
+        action="{{ panel_url('/yedekler/sil', request) }}"
         id="delete-form-{{ loop.index }}"
         class="backup-delete-form"
         hidden
@@ -187,7 +184,7 @@
       <div class="empty-state">
         <div class="empty-icon" aria-hidden="true"></div>
         <p>Bu instance icin henuz yedek yok.</p>
-        {% if can_view_settings %}<a href="/ayarlar" class="btn-glow">Ayarlara Git</a>{% endif %}
+        {% if can_view_settings %}<a href="{{ panel_url('/ayarlar', request) }}" class="btn-glow">Ayarlara Git</a>{% endif %}
       </div>
       {% endif %}
     </section>
