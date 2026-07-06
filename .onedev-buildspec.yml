@@ -13,10 +13,7 @@ jobs:
   triggers:
   - type: BranchUpdateTrigger
     branches: main
-  paramSpecs:
-  - type: CommitParam
-    name: GONDER
-    allowEmpty: true
+    userMatch: anyone
   retryCondition: never
   maxRetries: 3
   retryDelay: 30
