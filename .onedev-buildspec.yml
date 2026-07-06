@@ -1,0 +1,23 @@
+version: 44
+jobs:
+- name: GitHubGonder
+  steps:
+  - type: PushRepository
+    name: yedek_kontrol
+    remoteUrl: https://github.com/umiteyigun/yedek_kontrol.git
+    userName: umiteyigun
+    passwordSecret: github-token
+    force: true
+    condition: SUCCESSFUL
+    optional: false
+  triggers:
+  - type: BranchUpdateTrigger
+    branches: main
+  paramSpecs:
+  - type: CommitParam
+    name: GONDER
+    allowEmpty: true
+  retryCondition: never
+  maxRetries: 3
+  retryDelay: 30
+  timeout: 14400
