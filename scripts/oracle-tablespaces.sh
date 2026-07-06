@@ -15,8 +15,11 @@ NEXT_MB="${7:-0}"
 MAX_SIZE="${8:-UNLIMITED}"
 
 ORACLE_HOME="${ORACLE_HOME:-}"
+if [[ -z "$ORACLE_HOME" && -f /etc/oratab ]]; then
+  ORACLE_HOME="$(awk -F: '$0 !~ /^#/ && NF>=2 && $2 != "" { print $2; exit }' /etc/oratab)"
+fi
 if [[ -z "$ORACLE_HOME" && -d /u01/app/oracle/product ]]; then
-  ORACLE_HOME="$(ls -d /u01/app/oracle/product/*/db 2>/dev/null || ls -d /u01/app/oracle/product/*/db_1 2>/dev/null | head -1)"
+  ORACLE_HOME="$(ls -d /u01/app/oracle/product/*/dbhome_1 /u01/app/oracle/product/*/db_1 /u01/app/oracle/product/*/db 2>/dev/null | head -1)"
 fi
 
 if [[ -z "$ORACLE_HOME" || ! -x "${ORACLE_HOME}/bin/sqlplus" ]]; then

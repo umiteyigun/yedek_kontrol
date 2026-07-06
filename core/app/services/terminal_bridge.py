@@ -273,35 +273,43 @@ def _split_host_port(netloc: str) -> tuple[str, int | None]:
 
 
 def _origin_allowed(websocket: WebSocket) -> bool:
-    """CSWSH: Origin host ile Host header eslesmeli (nginx port dusurse bile)."""
+    """CSWSH: yerelde Origin~Host; hub proxy'de imzali merkez token (Origin farkli olabilir)."""
     if is_central_proxy_headers(websocket.headers):
-        # Hub koprusu: tarayici origin hub, panel host yerel — yalnizca imzali token ile.
         return bool(resolve_central_proxy_headers(websocket.headers))
 
     origin = websocket.headers.get("origin")
-    host = websocket.headers.get("host")
+    host = websocket.headers.get("host") or websocket.headers.get("x-forwarded-host")
     if not host or not origin:
         return False
 
+    try:
+        parsed = urlparse(origin)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https", "ws", "wss"):
+        return False
+
     origin_host, origin_port = _split_host_port(parsed.netloc)
-    req_host, req_port = _split_host_port(host)
-    if origin_host != req_host:
+    req_host, req_port = _split_host_port(host.split(",")[0].strip())
+    if origin_host.lower() != req_host.lower():
         return False
     if origin_port is not None and req_port is not None:
         return origin_port == req_port
-    # Nginx $host port icermeyebilir; hostname yeterli
     return True
 
 
 def authorize_terminal_ws(websocket: WebSocket) -> TerminalAuth | None:
+    proxy_headers = is_central_proxy_headers(websocket.headers)
     if not _origin_allowed(websocket):
+        reason = "proxy_token_gecersiz" if proxy_headers else "origin_uyumsuz"
         logger.warning(
-            "Terminal WS reddedildi: origin uyumsuz origin=%s host=%s ip=%s",
+            "Terminal WS reddedildi: %s origin=%s host=%s ip=%s",
+            reason,
             websocket.headers.get("origin"),
             websocket.headers.get("host"),
             _client_ip(websocket),
         )
-        audit_ws_denied(websocket, "origin_uyumsuz")
+        audit_ws_denied(websocket, reason)
         return None
 
     token = websocket.cookies.get(TERMINAL_SESSION_COOKIE)
