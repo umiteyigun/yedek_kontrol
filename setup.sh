@@ -225,7 +225,7 @@ install_auto_update_timer() {
   systemctl daemon-reload
   systemctl enable yedek-auto-update.timer
   systemctl start yedek-auto-update.timer
-  log "enable: yedek-auto-update.timer (her ~2dk GitHub kontrol)"
+  log "enable: yedek-auto-update.timer (her ~2dk git.trtek.tr kontrol)"
 }
 
 # --- Merkez agent (yedek-docker ile kurulur) ---
@@ -334,7 +334,7 @@ print_summary() {
   Systemd (reboot sonrasi otomatik):
     yedek-docker.service         -> docker stack (panel, API, FTP)
     yedek-backup-watcher.service -> panelden yedek tetikleme
-    yedek-auto-update.timer      -> GitHub commit kontrolu (~2dk)
+    yedek-auto-update.timer      -> git.trtek.tr commit kontrolu (~2dk)
     docker.service               -> container motoru
 
   Dogrulama:

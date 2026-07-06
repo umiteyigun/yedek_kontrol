@@ -152,8 +152,8 @@ interactive_autoupdate_config() {
     fi
   fi
 
-  section "GitHub oto-guncelleme"
-  echo "Repo: $(get_kv "$example" AUTO_UPDATE_REPO_URL || echo yedek_kontrol)"
+  section "Git oto-guncelleme (git.trtek.tr)"
+  echo "Repo: $(get_kv "$example" AUTO_UPDATE_REPO_URL || echo https://git.trtek.tr/umiteyigun/yedek_kontrol.git)"
   echo "Her ~2 dakikada yeni commit kontrol edilir."
 
   if ! prompt_yn "Oto-guncelleme aktif olsun mu?" "e"; then
@@ -168,11 +168,12 @@ interactive_autoupdate_config() {
   set_kv "$dst" AUTO_UPDATE_ENABLED "1"
   set_kv "$dst" YEDEK_ROOT "$PROMPT_ROOT"
   set_kv "$dst" AUTO_UPDATE_BRANCH "$(get_kv "$dst" AUTO_UPDATE_BRANCH || echo main)"
+  set_kv "$dst" AUTO_UPDATE_REPO_URL "$(get_kv "$example" AUTO_UPDATE_REPO_URL || echo https://git.trtek.tr/umiteyigun/yedek_kontrol.git)"
 
   echo
-  echo "Public repo icin token gerekmez. Private repo ise GitHub token girin."
+  echo "git.trtek.tr private repo icin Gitea token girin (readonly veya full)."
   local token
-  token="$(prompt_secret "GitHub token (AUTO_UPDATE_GIT_TOKEN)")"
+  token="$(prompt_secret "Git token (AUTO_UPDATE_GIT_TOKEN)")"
   if [[ -n "$token" ]]; then
     set_kv "$dst" AUTO_UPDATE_GIT_TOKEN "$token"
   fi
@@ -333,7 +334,7 @@ print_config_hints() {
       echo "     Sonra: systemctl start yedek-auto-update.timer"
     elif [[ -z "${AUTO_UPDATE_GIT_TOKEN:-}" ]]; then
       echo
-      echo "  >> Private GitHub repo kullaniyorsaniz: $auto_cfg -> AUTO_UPDATE_GIT_TOKEN"
+      echo "  >> git.trtek.tr icin token: $auto_cfg -> AUTO_UPDATE_GIT_TOKEN"
     fi
   fi
 

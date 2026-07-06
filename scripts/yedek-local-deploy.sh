@@ -51,14 +51,9 @@ for rel in "${PRESERVE[@]}"; do
   cp -a "$ROOT/$rel" "$STAGING/preserve/$rel"
 done
 
-if [[ -n "${AUTO_UPDATE_GIT_TOKEN:-}" ]]; then
-  export GIT_TERMINAL_PROMPT=0
-  if [[ "${AUTO_UPDATE_REPO_URL:-}" == https://github.com/* ]]; then
-    export GIT_CONFIG_COUNT=1
-    export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
-    export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$AUTO_UPDATE_GIT_TOKEN" | base64 | tr -d '\n')"
-  fi
-fi
+# shellcheck source=git-remote-auth.sh
+source "$ROOT/scripts/git-remote-auth.sh"
+setup_git_remote_auth
 
 git fetch origin "$AUTO_UPDATE_BRANCH"
 if ! git merge --ff-only FETCH_HEAD; then

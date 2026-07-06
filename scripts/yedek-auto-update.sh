@@ -1,5 +1,5 @@
 #!/bin/bash
-# GitHub'dan yeni commit var mi kontrol eder; varsa yedek-local-deploy.sh calistirir.
+# Git remote'dan yeni commit var mi kontrol eder; varsa yedek-local-deploy.sh calistirir.
 # systemd timer ile sessiz calisir — SHA ayniysa log yazmaz.
 set -euo pipefail
 
@@ -31,16 +31,9 @@ fi
 
 cd "$ROOT"
 
-if [[ -n "${AUTO_UPDATE_GIT_TOKEN:-}" ]]; then
-  export GIT_TERMINAL_PROMPT=0
-  if [[ "${AUTO_UPDATE_REPO_URL:-}" == https://github.com/* ]]; then
-    repo_path="${AUTO_UPDATE_REPO_URL#https://github.com/}"
-    repo_path="${repo_path%.git}"
-    export GIT_CONFIG_COUNT=1
-    export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
-    export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$AUTO_UPDATE_GIT_TOKEN" | base64 | tr -d '\n')"
-  fi
-fi
+# shellcheck source=git-remote-auth.sh
+source "$ROOT/scripts/git-remote-auth.sh"
+setup_git_remote_auth
 
 LOCAL_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
 [[ -n "$LOCAL_SHA" ]] || exit 0
