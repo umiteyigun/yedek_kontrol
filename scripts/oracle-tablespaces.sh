@@ -89,8 +89,8 @@ SELECT
   ROUND(NVL(fs.free_bytes,0)/POWER(1024,3),2),
   df.blocks,
   df.autoextensible,
-  ROUND(df.increment_by * ts.block_size / POWER(1024,3), 2),
-  CASE WHEN df.maxbytes >= 34359738368*1024 THEN 'UNLIMITED' ELSE TO_CHAR(ROUND(df.maxbytes/POWER(1024,3),2)) END,
+  ROUND(df.increment_by * ts.block_size / POWER(1024,2)),
+  CASE WHEN df.maxbytes >= 34359738368*1024 THEN 'UNLIMITED' ELSE TO_CHAR(ROUND(df.maxbytes/POWER(1024,2))) END,
   df.status,
   0
 FROM dba_data_files df
@@ -252,7 +252,7 @@ elif mode == "datafiles":
             "free_gb": num(p[5]),
             "blocks": int(num(p[6])),
             "auto_extend": p[7].upper() == "YES",
-            "increment_gb": num(p[8]),
+            "increment_mb": int(num(p[8])),
             "max_size": p[9],
             "status": p[10],
             "fragmentation_index": num(p[11]),

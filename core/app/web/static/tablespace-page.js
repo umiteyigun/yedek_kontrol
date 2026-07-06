@@ -112,10 +112,14 @@
           (df.auto_extend ? "✓" : "—") +
           "</td>" +
           "<td>" +
-          Number(df.increment_gb).toFixed(2) +
-          " GB</td>" +
+          (df.increment_mb != null ? df.increment_mb : 0) +
+          " MB</td>" +
           "<td>" +
-          esc(df.max_size) +
+          esc(
+            String(df.max_size || "").toUpperCase() === "UNLIMITED"
+              ? "UNLIMITED"
+              : String(df.max_size || "") + " MB"
+          ) +
           "</td>" +
           "<td>" +
           esc(df.status) +

@@ -66,7 +66,7 @@ class DatafileRow:
     free_gb: float = 0.0
     blocks: int = 0
     auto_extend: bool = False
-    increment_gb: float = 0.0
+    increment_mb: int = 0
     max_size: str = ""
     status: str = ""
     fragmentation_index: float = 0.0
@@ -82,7 +82,7 @@ class DatafileRow:
             free_gb=float(data.get("free_gb") or 0),
             blocks=int(data.get("blocks") or 0),
             auto_extend=bool(data.get("auto_extend")),
-            increment_gb=float(data.get("increment_gb") or 0),
+            increment_mb=int(data.get("increment_mb") or data.get("increment_gb") or 0),
             max_size=str(data.get("max_size") or ""),
             status=str(data.get("status") or ""),
             fragmentation_index=float(data.get("fragmentation_index") or 0),
@@ -175,13 +175,22 @@ def suggest_next_datafile(tablespace: str, datafiles: list[DatafileRow]) -> dict
         new_name = f"{stem}001.dbf"
         hint = "Son dosyada numara yok — 001 eklendi"
 
-    next_mb = int(round(last.increment_gb * 1024)) if last.increment_gb > 0 else 100
+    next_mb = last.increment_mb if last.increment_mb > 0 else 100
+    max_raw = (last.max_size or "UNLIMITED").strip().upper()
+    if max_raw != "UNLIMITED":
+        try:
+            max_mb = int(float(max_raw))
+            max_suggest = str(max_mb)
+        except ValueError:
+            max_suggest = "UNLIMITED"
+    else:
+        max_suggest = "UNLIMITED"
     return {
         "suggested_path": directory + new_name,
         "size_mb": default_size_mb,
         "auto_extend": last.auto_extend,
         "next_mb": next_mb,
-        "max_size": last.max_size or "UNLIMITED",
+        "max_size": max_suggest,
         "hint": hint,
         "based_on": last.file_name,
     }

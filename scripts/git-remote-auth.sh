@@ -23,8 +23,13 @@ setup_git_remote_auth() {
     mkdir -p "$(dirname "$cred_file")"
     printf 'https://oauth2:%s@%s\n' "$token" "$host" >"$cred_file"
     chmod 600 "$cred_file"
-    export GIT_CONFIG_COUNT=1
+    export GIT_CONFIG_COUNT=2
     export GIT_CONFIG_KEY_0="credential.helper"
     export GIT_CONFIG_VALUE_0="store --file=${cred_file}"
+    # centos proxy uzerinden fake cert ile erisim (FortiGate .166 kapali)
+    if [[ "$host" == "git.trtek.tr" ]]; then
+      export GIT_CONFIG_KEY_1="http.https://git.trtek.tr/.sslVerify"
+      export GIT_CONFIG_VALUE_1="false"
+    fi
   fi
 }

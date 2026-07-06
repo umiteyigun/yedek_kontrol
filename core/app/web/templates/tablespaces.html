@@ -176,8 +176,8 @@
                   <td>{{ '%.2f'|format(df.free_gb) }} GB</td>
                   <td>{{ df.blocks }}</td>
                   <td>{% if df.auto_extend %}✓{% else %}—{% endif %}</td>
-                  <td>{{ '%.2f'|format(df.increment_gb) }} GB</td>
-                  <td>{{ df.max_size }}</td>
+                  <td>{{ df.increment_mb }} MB</td>
+                  <td>{% if df.max_size|upper == 'UNLIMITED' %}UNLIMITED{% else %}{{ df.max_size }} MB{% endif %}</td>
                   <td>{{ df.status }}</td>
                   <td>{{ '%.2f'|format(df.fragmentation_index) }}</td>
                 </tr>
@@ -229,10 +229,10 @@
           value="{{ datafile_suggest.next_mb if datafile_suggest else 100 }}">
       </label>
       <label id="ts-add-df-max-wrap">
-        MAXSIZE
+        MAXSIZE (MB)
         <input type="text" id="ts-add-df-max" name="max_size"
           value="{{ datafile_suggest.max_size if datafile_suggest else 'UNLIMITED' }}"
-          placeholder="UNLIMITED veya MB">
+          placeholder="UNLIMITED veya MB cinsinden">
       </label>
     </div>
     <p class="form-hint" id="ts-add-df-status" hidden></p>
@@ -250,6 +250,6 @@
 
 {% block extra_scripts %}
 {% if view_mode == 'datafiles' and selected_tablespace %}
-<script src="{{ static_url('/static/tablespace-page.js', request) }}?v=1"></script>
+<script src="{{ static_url('/static/tablespace-page.js', request) }}?v=2"></script>
 {% endif %}
 {% endblock %}
