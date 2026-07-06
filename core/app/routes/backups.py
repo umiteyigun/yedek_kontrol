@@ -14,21 +14,24 @@ router = APIRouter(tags=["backups"])
 TRIGGER_PATH = Path("/host-output/backup.trigger")
 
 
-@router.get("/api/log/content")
-def log_content_api(
+def _log_content_response(
     request: Request,
-    name: str = Query(..., min_length=1),
-    source: str = Query("expdp"),
-    instance_id: str = Query(""),
-):
+    *,
+    name: str,
+    source: str,
+    instance_id: str,
+) -> JSONResponse:
     if not get_current_user(request):
         return JSONResponse({"ok": False, "error": "Oturum gerekli"}, status_code=401)
     if not can(request, "backups", "view"):
         return JSONResponse({"ok": False, "error": "Log goruntuleme icin yetki gerekli"}, status_code=403)
 
+    clean_name = name.strip()
+    if not clean_name:
+        return JSONResponse({"ok": False, "error": "Log dosya adi gerekli"}, status_code=400)
+
     settings = request.app.state.store.get()
     clean_source = source.strip().lower()
-    clean_name = name.strip()
 
     try:
         if clean_source == "panel":
@@ -46,6 +49,37 @@ def log_content_api(
         return JSONResponse({"ok": True, "name": clean_name, "content": content})
     except ValueError as exc:
         return JSONResponse({"ok": False, "error": str(exc), "name": clean_name}, status_code=400)
+
+
+@router.get("/api/log/content/{log_name}")
+def log_content_api_path(
+    request: Request,
+    log_name: str,
+    source: str = Query("expdp"),
+    instance_id: str = Query(""),
+):
+    return _log_content_response(
+        request,
+        name=log_name,
+        source=source,
+        instance_id=instance_id,
+    )
+
+
+@router.get("/api/log/content")
+def log_content_api(
+    request: Request,
+    name: str = Query(""),
+    source: str = Query("expdp"),
+    instance_id: str = Query(""),
+):
+    clean_name = (name or request.query_params.get("name") or "").strip()
+    return _log_content_response(
+        request,
+        name=clean_name,
+        source=source,
+        instance_id=instance_id,
+    )
 
 
 @router.get("/yedekler", response_class=HTMLResponse)

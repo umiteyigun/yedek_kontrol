@@ -38,6 +38,9 @@
         if (Array.isArray(data.detail)) {
           return data.detail
             .map(function (item) {
+              if (item && item.loc && item.msg) {
+                return item.loc.join('.') + ': ' + item.msg;
+              }
               if (item && item.msg) {
                 return String(item.msg);
               }
@@ -77,7 +80,6 @@
     }
     const params = new URLSearchParams({
       source: source || 'expdp',
-      name: name,
     });
     if (instanceId) {
       params.set('instance_id', instanceId);
@@ -92,7 +94,8 @@
     modal.showModal();
 
     const base = window.yedekAssetBase ? window.yedekAssetBase() : window.__YEDEK_BASE__ || '';
-    fetch(base + '/api/log/content?' + params.toString(), { credentials: 'same-origin' })
+    const logPath = '/api/log/content/' + encodeURIComponent(name);
+    fetch(base + logPath + '?' + params.toString(), { credentials: 'same-origin' })
       .then(parseApiResponse)
       .then(function (result) {
         const data = result.data || {};
@@ -118,7 +121,11 @@
   document.querySelectorAll('.btn-log-view').forEach(function (btn) {
     btn.addEventListener('click', function (event) {
       event.preventDefault();
-      openLogViewer(btn.dataset.logSource, btn.dataset.logName, btn.dataset.logInstance || '');
+      openLogViewer(
+        btn.getAttribute('data-log-source') || btn.dataset.logSource,
+        btn.getAttribute('data-log-name') || btn.dataset.logName,
+        btn.getAttribute('data-log-instance') || btn.dataset.logInstance || ''
+      );
     });
   });
 
