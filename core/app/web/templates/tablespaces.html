@@ -230,9 +230,9 @@
       </label>
       <label id="ts-add-df-max-wrap">
         MAXSIZE (MB)
-        <input type="text" id="ts-add-df-max" name="max_size"
-          value="{{ datafile_suggest.max_size if datafile_suggest else 'UNLIMITED' }}"
-          placeholder="UNLIMITED veya MB cinsinden">
+        <input type="number" id="ts-add-df-max" name="max_size" min="1" step="1"
+          value="{{ datafile_suggest.max_size if datafile_suggest else '32768' }}"
+          placeholder="MB (varsayilan 32768 = 32 GB)">
       </label>
     </div>
     <p class="form-hint" id="ts-add-df-status" hidden></p>
@@ -250,6 +250,6 @@
 
 {% block extra_scripts %}
 {% if view_mode == 'datafiles' and selected_tablespace %}
-<script src="{{ static_url('/static/tablespace-page.js', request) }}?v=2"></script>
+<script src="{{ static_url('/static/tablespace-page.js', request) }}?v=3"></script>
 {% endif %}
 {% endblock %}

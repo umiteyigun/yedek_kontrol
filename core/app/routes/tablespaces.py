@@ -25,7 +25,7 @@ class AddDatafileBody(BaseModel):
     size_mb: int = Field(1024, ge=1, le=32767)
     auto_extend: bool = True
     next_mb: int = Field(100, ge=1, le=32767)
-    max_size: str = "UNLIMITED"
+    max_size: str = Field(default="32768")
 
 
 def _resolve_instance(request: Request):

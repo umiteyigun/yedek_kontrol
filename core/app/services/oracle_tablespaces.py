@@ -15,6 +15,7 @@ from app.services.oracle_probe import is_instance_running
 logger = logging.getLogger(__name__)
 
 TS_SCRIPT = "/yedek/config/oracle-tablespaces.sh"
+DEFAULT_MAX_SIZE_MB = 32768  # 32 GB — yeni datafile onerisi
 
 
 @dataclass
@@ -151,7 +152,7 @@ def suggest_next_datafile(tablespace: str, datafiles: list[DatafileRow]) -> dict
             "size_mb": default_size_mb,
             "auto_extend": True,
             "next_mb": 100,
-            "max_size": "UNLIMITED",
+            "max_size": str(DEFAULT_MAX_SIZE_MB),
             "hint": "Bu tablespace icin datafile yok — 001 ile baslatildi",
             "based_on": "",
         }
@@ -176,21 +177,12 @@ def suggest_next_datafile(tablespace: str, datafiles: list[DatafileRow]) -> dict
         hint = "Son dosyada numara yok — 001 eklendi"
 
     next_mb = last.increment_mb if last.increment_mb > 0 else 100
-    max_raw = (last.max_size or "UNLIMITED").strip().upper()
-    if max_raw != "UNLIMITED":
-        try:
-            max_mb = int(float(max_raw))
-            max_suggest = str(max_mb)
-        except ValueError:
-            max_suggest = "UNLIMITED"
-    else:
-        max_suggest = "UNLIMITED"
     return {
         "suggested_path": directory + new_name,
         "size_mb": default_size_mb,
         "auto_extend": last.auto_extend,
         "next_mb": next_mb,
-        "max_size": max_suggest,
+        "max_size": str(DEFAULT_MAX_SIZE_MB),
         "hint": hint,
         "based_on": last.file_name,
     }

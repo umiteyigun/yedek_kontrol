@@ -184,7 +184,7 @@
       size_mb: parseInt((sizeInput && sizeInput.value) || "1024", 10),
       auto_extend: !!(autoInput && autoInput.checked),
       next_mb: parseInt((nextInput && nextInput.value) || "100", 10),
-      max_size: ((maxInput && maxInput.value.trim()) || "UNLIMITED").toUpperCase(),
+      max_size: String((maxInput && maxInput.value.trim()) || "32768"),
     };
 
     try {
