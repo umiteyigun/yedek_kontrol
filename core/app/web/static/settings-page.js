@@ -41,25 +41,34 @@
   function syncFtpUploadFields(instanceId) {
     const form = document.getElementById('instance-form-' + instanceId);
     if (!form) return;
-    const ftpToggle = form.querySelector('.ftp-upload-toggle');
-    const ftpOn = ftpToggle ? ftpToggle.checked : false;
     const instToggle = form.querySelector('[name="enabled"]');
     const instOn = instToggle ? instToggle.checked : true;
-    const requireFtp = ftpOn && instOn;
-    const wrap = document.getElementById('ftp-fields-' + instanceId);
-    if (!wrap) return;
-    wrap.dataset.ftpDisabled = ftpOn ? '' : '1';
-    wrap.querySelectorAll('input[name^="localftp"]').forEach(function (input) {
-      input.disabled = !ftpOn;
-      if (!requireFtp) {
-        input.required = false;
-        return;
-      }
-      if (input.name === 'localftppass') {
-        input.required = input.dataset.hasPass !== '1';
-      } else {
-        input.required = true;
-      }
+
+    [['primary', 'ftp-fields-'], ['secondary', 'ftp2-fields-']].forEach(function (pair) {
+      const slot = pair[0];
+      const wrap = document.getElementById(pair[1] + instanceId);
+      const toggle = form.querySelector('.ftp-upload-toggle[data-ftp-slot="' + slot + '"]');
+      if (!wrap || !toggle) return;
+      const ftpOn = toggle.checked;
+      const requireFtp = ftpOn && instOn;
+      wrap.dataset.ftpDisabled = ftpOn ? '' : '1';
+      const names = slot === 'secondary'
+        ? ['localftpip2', 'localftpuser2', 'localftppass2', 'localftpdir2']
+        : ['localftpip', 'localftpuser', 'localftppass', 'localftpdir'];
+      names.forEach(function (name) {
+        const input = form.querySelector('[name="' + name + '"]');
+        if (!input) return;
+        input.disabled = !ftpOn;
+        if (!requireFtp) {
+          input.required = false;
+          return;
+        }
+        if (name === 'localftppass' || name === 'localftppass2') {
+          input.required = input.dataset.hasPass !== '1';
+        } else {
+          input.required = true;
+        }
+      });
     });
   }
 
@@ -89,6 +98,7 @@
   const labelInput = document.getElementById('schedule-label');
   const enabledInput = document.getElementById('schedule-enabled');
   const ruleIdInput = document.getElementById('schedule-rule-id');
+  const ftpTargetInput = document.getElementById('schedule-ftp-target');
 
   function toggleWeeklyDay() {
     const weekly = backupType.value === 'HAFTALIK';
@@ -116,6 +126,9 @@
     timeInput.value = isEdit ? rule.time : '02:00';
     labelInput.value = isEdit ? (rule.label || '') : '';
     enabledInput.checked = isEdit ? rule.enabled : true;
+    if (ftpTargetInput) {
+      ftpTargetInput.value = isEdit ? (rule.ftp_target || 'primary') : 'primary';
+    }
 
     if (isEdit && rule.day_of_week !== null && rule.day_of_week !== '') {
       daySelect.value = String(rule.day_of_week);
@@ -145,6 +158,7 @@
         day_of_week: btn.dataset.day === '' ? null : Number(btn.dataset.day),
         enabled: btn.dataset.enabled === '1',
         label: btn.dataset.label || '',
+        ftp_target: btn.dataset.ftpTarget || 'primary',
       });
     });
   });
@@ -420,6 +434,7 @@
   const ftpState = {
     instanceId: '',
     instanceName: '',
+    ftpTarget: 'primary',
     path: '/',
     loading: false,
     deleteMode: false,
@@ -463,16 +478,18 @@
     return parts.length ? '/' + parts.join('/') : '/';
   }
 
-  function readInstanceFtpCredentials(instanceId) {
+  function readInstanceFtpCredentials(instanceId, ftpTarget) {
     const form = document.getElementById('instance-form-' + instanceId);
     if (!form) {
       return null;
     }
+    const secondary = ftpTarget === 'secondary';
     return {
-      host: (form.querySelector('[name="localftpip"]') || {}).value || '',
-      user: (form.querySelector('[name="localftpuser"]') || {}).value || '',
-      password: (form.querySelector('[name="localftppass"]') || {}).value || '',
-      baseDir: normalizeFtpPath((form.querySelector('[name="localftpdir"]') || {}).value || '/'),
+      host: (form.querySelector(secondary ? '[name="localftpip2"]' : '[name="localftpip"]') || {}).value || '',
+      user: (form.querySelector(secondary ? '[name="localftpuser2"]' : '[name="localftpuser"]') || {}).value || '',
+      password: (form.querySelector(secondary ? '[name="localftppass2"]' : '[name="localftppass"]') || {}).value || '',
+      baseDir: normalizeFtpPath((form.querySelector(secondary ? '[name="localftpdir2"]' : '[name="localftpdir"]') || {}).value || '/'),
+      ftpTarget: secondary ? 'secondary' : 'primary',
     };
   }
 
@@ -659,7 +676,7 @@
     if (!ftpState.instanceId || ftpState.loading) {
       return;
     }
-    const creds = readInstanceFtpCredentials(ftpState.instanceId);
+    const creds = readInstanceFtpCredentials(ftpState.instanceId, ftpState.ftpTarget);
     if (!creds) {
       ftpStatus.textContent = 'Form bulunamadi';
       ftpStatus.className = 'ftp-browser-status failed';
@@ -689,6 +706,7 @@
           user: creds.user,
           password: creds.password,
           path: targetPath,
+          ftp_target: creds.ftpTarget || ftpState.ftpTarget || 'primary',
         }),
       });
       const data = await response.json();
@@ -737,7 +755,7 @@
       return;
     }
 
-    const creds = readInstanceFtpCredentials(ftpState.instanceId);
+    const creds = readInstanceFtpCredentials(ftpState.instanceId, ftpState.ftpTarget);
     if (!creds) {
       return;
     }
@@ -757,6 +775,7 @@
           password: creds.password,
           path: ftpState.path,
           files: files,
+          ftp_target: creds.ftpTarget || ftpState.ftpTarget || 'primary',
         }),
       });
       const data = await response.json();
@@ -775,12 +794,13 @@
     }
   }
 
-  window.openFtpBrowserModal = function (instanceId, instanceName) {
+  window.openFtpBrowserModal = function (instanceId, instanceName, ftpTarget) {
     ftpState.instanceId = instanceId;
     ftpState.instanceName = instanceName || instanceId;
+    ftpState.ftpTarget = ftpTarget || 'primary';
     setFtpDeleteMode(false);
-    ftpTitle.textContent = 'FTP Tarayici — ' + ftpState.instanceName;
-    const creds = readInstanceFtpCredentials(instanceId);
+    ftpTitle.textContent = (ftpState.ftpTarget === 'secondary' ? 'FTP-2 Tarayici — ' : 'FTP-1 Tarayici — ') + ftpState.instanceName;
+    const creds = readInstanceFtpCredentials(instanceId, ftpState.ftpTarget);
     if (creds) {
       ftpMeta.textContent = (creds.host || '—') + ' · baslangic: ' + (creds.baseDir || '/');
     }
@@ -795,7 +815,7 @@
 
   document.querySelectorAll('.btn-ftp-browse').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      openFtpBrowserModal(btn.dataset.instanceId, btn.dataset.instanceName);
+      openFtpBrowserModal(btn.dataset.instanceId, btn.dataset.instanceName, btn.dataset.ftpTarget || 'primary');
     });
   });
 

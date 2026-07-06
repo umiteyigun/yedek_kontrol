@@ -213,14 +213,23 @@
               </div>
 
               <div class="ftp-section-toolbar full">
-                <p class="form-hint ftp-section-hint">Uzak sunucuya yedek yukleme (her kurum ayri FTP hedefi kullanabilir)</p>
+                <p class="form-hint ftp-section-hint">Uzak sunucuya yedek yukleme — zamanlamada FTP-1 veya FTP-2 secilir</p>
                 <button
                   type="button"
                   class="btn-ghost btn-sm btn-ftp-browse"
+                  data-ftp-target="primary"
                   data-instance-id="{{ inst.id }}"
                   data-instance-name="{{ inst.display_name }}"
-                >FTP Tarayici</button>
+                >FTP-1 Tarayici</button>
+                <button
+                  type="button"
+                  class="btn-ghost btn-sm btn-ftp-browse"
+                  data-ftp-target="secondary"
+                  data-instance-id="{{ inst.id }}"
+                  data-instance-name="{{ inst.display_name }}"
+                >FTP-2 Tarayici</button>
               </div>
+              <p class="form-hint full"><strong>FTP-1 (birincil)</strong> — genelde hastane ici sunucu</p>
               <label class="checkbox-row full">
                 <input
                   type="checkbox"
@@ -228,16 +237,36 @@
                   value="1"
                   class="ftp-upload-toggle"
                   data-instance-id="{{ inst.id }}"
+                  data-ftp-slot="primary"
                   {% if inst.ftp_upload_enabled %}checked{% endif %}
                 >
-                Uzak FTP yuklemesi aktif (kapaliysa yedek yalnizca yerelde kalir)
+                FTP-1 yuklemesi aktif
               </label>
               <div class="ftp-config-fields full" id="ftp-fields-{{ inst.id }}" {% if not inst.ftp_upload_enabled %}data-ftp-disabled="1"{% endif %}>
               <label>Uzak FTP IP <input type="text" name="localftpip" value="{{ inst.localftpip }}" placeholder="ornek: 10.0.0.50" {% if inst.enabled and inst.ftp_upload_enabled %}required{% endif %}></label>
               <label>Uzak FTP Kullanici <input type="text" name="localftpuser" value="{{ inst.localftpuser }}" {% if inst.enabled and inst.ftp_upload_enabled %}required{% endif %}></label>
               <label>Uzak FTP Sifre <input type="password" name="localftppass" data-has-pass="{% if inst.masked_ftp_pass %}1{% else %}0{% endif %}" placeholder="Mevcut: {{ inst.masked_ftp_pass }}" {% if inst.enabled and inst.ftp_upload_enabled and not inst.masked_ftp_pass %}required{% endif %}></label>
               <label class="full">Uzak FTP Dizin <input type="text" name="localftpdir" value="{{ inst.localftpdir if inst.localftpdir and inst.localftpdir != '/' else '' }}" placeholder="/yedek veya /"></label>
-              <p class="form-hint full">Sunucudaki hedef klasor. Varsayilan <strong>/</strong> (kok dizin).</p>
+              </div>
+              <p class="form-hint full"><strong>FTP-2 (ikincil)</strong> — genelde il saglik / merkez arsiv</p>
+              <label class="checkbox-row full">
+                <input
+                  type="checkbox"
+                  name="ftp2_upload_enabled"
+                  value="1"
+                  class="ftp-upload-toggle"
+                  data-instance-id="{{ inst.id }}"
+                  data-ftp-slot="secondary"
+                  {% if inst.ftp2_upload_enabled %}checked{% endif %}
+                >
+                FTP-2 yuklemesi aktif
+              </label>
+              <div class="ftp-config-fields full" id="ftp2-fields-{{ inst.id }}" {% if not inst.ftp2_upload_enabled %}data-ftp-disabled="1"{% endif %}>
+              <label>Uzak FTP-2 IP <input type="text" name="localftpip2" value="{{ inst.localftpip2 }}" placeholder="ornek: 10.33.33.10" {% if inst.enabled and inst.ftp2_upload_enabled %}required{% endif %}></label>
+              <label>Uzak FTP-2 Kullanici <input type="text" name="localftpuser2" value="{{ inst.localftpuser2 }}" {% if inst.enabled and inst.ftp2_upload_enabled %}required{% endif %}></label>
+              <label>Uzak FTP-2 Sifre <input type="password" name="localftppass2" data-has-pass="{% if inst.masked_ftp2_pass %}1{% else %}0{% endif %}" placeholder="Mevcut: {{ inst.masked_ftp2_pass }}" {% if inst.enabled and inst.ftp2_upload_enabled and not inst.masked_ftp2_pass %}required{% endif %}></label>
+              <label class="full">Uzak FTP-2 Dizin <input type="text" name="localftpdir2" value="{{ inst.localftpdir2 if inst.localftpdir2 and inst.localftpdir2 != '/' else '' }}" placeholder="/YEDEKHastane veya /"></label>
+              <p class="form-hint full">Ornek: <strong>/YEDEKSilifkeADSM</strong> veya <strong>/dbyedek</strong></p>
               </div>
               <label>Saklama (gun) <input type="number" min="1" max="365" name="retention_days" value="{{ inst.retention_days if inst.retention_days > 0 else 2 }}" {% if inst.enabled %}required{% endif %}></label>
             </div>
@@ -275,6 +304,7 @@
                     <th>Durum</th>
                     <th>Tip</th>
                     <th>Plan</th>
+                    <th>FTP</th>
                     <th>Etiket</th>
                     <th>Islem</th>
                   </tr>
@@ -291,6 +321,7 @@
                     </td>
                     <td>{{ rule.backup_type_label }}</td>
                     <td><code>{{ rule.summary }}</code></td>
+                    <td>{{ rule.ftp_target_label }}</td>
                     <td>{{ rule.label or '—' }}</td>
                     <td class="schedule-actions">
                       <button
@@ -304,6 +335,7 @@
                         data-day="{{ rule.day_of_week if rule.day_of_week is not none else '' }}"
                         data-enabled="{{ '1' if rule.enabled else '0' }}"
                         data-label="{{ rule.label }}"
+                        data-ftp-target="{{ rule.ftp_target }}"
                       >Duzenle</button>
                       <form
                         method="post"
@@ -482,6 +514,14 @@
           <label class="full">
             Etiket (opsiyonel)
             <input type="text" name="label" id="schedule-label" placeholder="Ornek: Gece yedegi">
+          </label>
+          <label class="full">
+            FTP hedefi
+            <select name="ftp_target" id="schedule-ftp-target">
+              <option value="primary">FTP-1 (birincil / yerel)</option>
+              <option value="secondary">FTP-2 (ikincil / merkez)</option>
+              <option value="none">FTP yok (yalnizca yerel disk)</option>
+            </select>
           </label>
           <label class="checkbox-row full">
             <input type="checkbox" name="enabled" id="schedule-enabled" value="1" checked>

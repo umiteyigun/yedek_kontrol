@@ -34,6 +34,7 @@ def _render_template(name: str, settings: YedekSettings) -> str:
 def _render_instance_shell(inst: InstanceSettings, settings: YedekSettings) -> str:
     directorydizini = inst.effective_directorydizini(settings.yedek_dir)
     ftp_ip, ftp_user, ftp_pass = inst.effective_ftp(settings)
+    ftp2_ip, ftp2_user, ftp2_pass = inst.effective_ftp2(settings)
     lines = [
         f'# Instance: {inst.id} ({inst.display_name()}) - otomatik uretildi',
         f'INSTANCE_ID={shlex.quote(inst.id)}',
@@ -63,6 +64,11 @@ def _render_instance_shell(inst: InstanceSettings, settings: YedekSettings) -> s
         f"localftppass={shlex.quote(ftp_pass)}",
         f'localftpdir={shlex.quote(inst.localftpdir or "/")}',
         f'ftp_upload_enabled={1 if inst.ftp_upload_enabled else 0}',
+        f'localftpip2={shlex.quote(ftp2_ip)}',
+        f"localftpuser2={shlex.quote(ftp2_user)}",
+        f"localftppass2={shlex.quote(ftp2_pass)}",
+        f'localftpdir2={shlex.quote(inst.localftpdir2 or "/")}',
+        f'ftp2_upload_enabled={1 if inst.ftp2_upload_enabled else 0}',
         f'mail_notify={1 if settings.mail_notify else 0}',
         f"backup_protect_mode={shlex.quote(inst.backup_protect_mode)}",
         f"backup_protect_pass={shlex.quote(inst.backup_protect_pass)}",

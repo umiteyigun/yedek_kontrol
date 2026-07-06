@@ -51,6 +51,23 @@ from app.services.ftp_client import browse_directory, delete_files
 router = APIRouter(tags=["panel"])
 
 
+def _ftp_credentials_from_body(
+    body: dict[str, Any],
+    settings: YedekSettings,
+    target: InstanceSettings,
+) -> tuple[str, str, str, str]:
+    ftp_target = str(body.get("ftp_target", "primary")).strip().lower()
+    if ftp_target not in {"primary", "secondary"}:
+        ftp_target = "primary"
+
+    host, user, password, default_dir = target.ftp_credentials_for_target(settings, ftp_target)
+    host = str(body.get("host", "")).strip() or host
+    user = str(body.get("user", "")).strip() or user
+    password = str(body.get("password", "")).strip() or password
+    path = str(body.get("path", "")).strip() or default_dir
+    return host, user, password, path
+
+
 def _parse_settings_form(form, current: YedekSettings) -> dict[str, Any]:
     """Tum ayarlari formdan oku (geriye uyumluluk)."""
     payload = _parse_global_form(form, current)
@@ -64,7 +81,14 @@ def _parse_all_instances_form(form, current: YedekSettings) -> list[dict[str, An
         prefix = f"inst_{inst.id}_"
         if not any(
             form.get(f"{prefix}{name}") is not None
-            for name in ("hastane", "enabled", "localftpip", "ftp_upload_enabled")
+            for name in (
+                "hastane",
+                "enabled",
+                "localftpip",
+                "ftp_upload_enabled",
+                "localftpip2",
+                "ftp2_upload_enabled",
+            )
         ):
             instances.append(inst.model_dump())
             continue
@@ -86,6 +110,7 @@ def _parse_instance_form(
         return str(value).strip() if value is not None else default
 
     ftp_pass = field("localftppass")
+    ftp2_pass = field("localftppass2")
     protect_pass = field("backup_protect_pass")
     retention_raw = field("retention_days", str(inst.retention_days or 2))
     protect_mode = field("backup_protect_mode", inst.backup_protect_mode or "gzip").lower()
@@ -111,6 +136,11 @@ def _parse_instance_form(
         "localftppass": ftp_pass if ftp_pass else inst.localftppass,
         "localftpdir": field("localftpdir", inst.localftpdir or "/") or "/",
         "ftp_upload_enabled": form.get(f"{prefix}ftp_upload_enabled") == "1",
+        "localftpip2": field("localftpip2", inst.localftpip2),
+        "localftpuser2": field("localftpuser2", inst.localftpuser2),
+        "localftppass2": ftp2_pass if ftp2_pass else inst.localftppass2,
+        "localftpdir2": field("localftpdir2", inst.localftpdir2 or "/") or "/",
+        "ftp2_upload_enabled": form.get(f"{prefix}ftp2_upload_enabled") == "1",
         "retention_days": max(1, int(retention_raw or inst.retention_days or 2)),
         "backup_protect_mode": protect_mode,
         "backup_protect_pass": protect_pass if protect_pass else inst.backup_protect_pass,
@@ -166,11 +196,24 @@ def _validate_instance(inst: dict[str, Any]) -> list[str]:
         errors.append(f"{label}: hastane adi zorunlu")
     if inst.get("ftp_upload_enabled"):
         if not str(inst.get("localftpip", "")).strip():
-            errors.append(f"{label}: uzak FTP IP zorunlu")
+            errors.append(f"{label}: birincil FTP IP zorunlu")
         if not str(inst.get("localftpuser", "")).strip():
-            errors.append(f"{label}: uzak FTP kullanici zorunlu")
+            errors.append(f"{label}: birincil FTP kullanici zorunlu")
         if not str(inst.get("localftppass", "")).strip():
-            errors.append(f"{label}: uzak FTP sifre zorunlu")
+            errors.append(f"{label}: birincil FTP sifre zorunlu")
+    if inst.get("ftp2_upload_enabled"):
+        if not str(inst.get("localftpip2", "")).strip():
+            errors.append(f"{label}: ikincil FTP IP zorunlu")
+        if not str(inst.get("localftpuser2", "")).strip():
+            errors.append(f"{label}: ikincil FTP kullanici zorunlu")
+        if not str(inst.get("localftppass2", "")).strip():
+            errors.append(f"{label}: ikincil FTP sifre zorunlu")
+    for rule in inst.get("schedules", []):
+        target = str(rule.get("ftp_target", "primary"))
+        if target == "secondary" and not inst.get("ftp2_upload_enabled"):
+            errors.append(f"{label}: zamanlama '{rule.get('id', '?')}' FTP-2 secili ama ikincil FTP kapali")
+        if target == "primary" and not inst.get("ftp_upload_enabled"):
+            errors.append(f"{label}: zamanlama '{rule.get('id', '?')}' FTP-1 secili ama birincil FTP kapali")
     mode = str(inst.get("backup_protect_mode", "gzip")).lower()
     if mode in {"oracle", "zip"} and not str(inst.get("backup_protect_pass", "")).strip():
         errors.append(f"{label}: yedek koruma sifresi zorunlu ({mode})")
@@ -218,6 +261,7 @@ def _enrich_schedule_rules(schedules: list[dict[str, Any]]) -> list[dict[str, An
         item = rule.model_dump()
         item["summary"] = rule.summary()
         item["backup_type_label"] = rule.backup_type_label()
+        item["ftp_target_label"] = rule.ftp_target_label()
         enriched.append(item)
     return enriched
 
@@ -243,6 +287,9 @@ def _parse_schedule_form(form) -> BackupScheduleRule:
     enabled = form.get("enabled") == "1"
     label = str(form.get("label", "")).strip()
     rule_id = str(form.get("rule_id", "")).strip()
+    ftp_target = str(form.get("ftp_target", "primary")).strip().lower()
+    if ftp_target not in {"primary", "secondary", "none"}:
+        raise ValueError("FTP hedefi primary, secondary veya none olmali")
 
     if not rule_id:
         rule_id = slugify(f"{backup_type}-{time_value}")
@@ -254,6 +301,7 @@ def _parse_schedule_form(form) -> BackupScheduleRule:
         time=time_value,
         day_of_week=day_of_week,
         label=label,
+        ftp_target=ftp_target,  # type: ignore[arg-type]
     )
 
 
@@ -503,10 +551,7 @@ async def settings_ftp_browse(request: Request, instance_id: str):
     except Exception:  # noqa: BLE001
         body = {}
 
-    host = str(body.get("host", "")).strip() or target.localftpip
-    user = str(body.get("user", "")).strip() or target.localftpuser
-    password = str(body.get("password", "")) or target.localftppass
-    path = str(body.get("path", "")).strip() or (target.localftpdir or "/")
+    host, user, password, path = _ftp_credentials_from_body(body, current, target)
 
     if not host:
         return JSONResponse({"ok": False, "error": "FTP sunucu adresi bos"}, status_code=400)
@@ -572,10 +617,7 @@ async def settings_ftp_delete(request: Request, instance_id: str):
     except Exception:  # noqa: BLE001
         body = {}
 
-    host = str(body.get("host", "")).strip() or target.localftpip
-    user = str(body.get("user", "")).strip() or target.localftpuser
-    password = str(body.get("password", "")) or target.localftppass
-    path = str(body.get("path", "")).strip() or (target.localftpdir or "/")
+    host, user, password, path = _ftp_credentials_from_body(body, current, target)
     files = body.get("files") or []
 
     if not isinstance(files, list):

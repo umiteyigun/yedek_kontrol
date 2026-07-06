@@ -24,6 +24,7 @@ def instance_view(settings: YedekSettings, inst: InstanceSettings) -> dict[str, 
     data["display_name"] = inst.display_name()
     data["directorydizini"] = inst.effective_directorydizini(settings.yedek_dir)
     data["masked_ftp_pass"] = mask_secret(inst.localftppass)
+    data["masked_ftp2_pass"] = mask_secret(inst.localftppass2)
     data["masked_backup_protect_pass"] = mask_secret(inst.backup_protect_pass)
     return data
 

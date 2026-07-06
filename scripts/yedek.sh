@@ -26,6 +26,7 @@ source "$CONFIG_FILE"
 
 yedektipi="${1:-}"
 only_instance="${2:-}"
+FTP_TARGET="${FTP_TARGET:-primary}"
 [[ -n "$yedektipi" ]] || die "Kullanim: yedek.sh GUNLUK|HAFTALIK [instance_id]"
 [[ "$yedektipi" == "GUNLUK" || "$yedektipi" == "HAFTALIK" ]] || die "Gecersiz tip: ${yedektipi}"
 
@@ -60,12 +61,47 @@ END_SCRIPT
   fi
 }
 
+_resolve_ftp_credentials() {
+  FTP_TARGET="${FTP_TARGET:-primary}"
+  ACTIVE_FTP_IP=""
+  ACTIVE_FTP_USER=""
+  ACTIVE_FTP_PASS=""
+  ACTIVE_FTP_DIR="/"
+  case "$FTP_TARGET" in
+    none)
+      return 1
+      ;;
+    secondary)
+      [[ "${ftp2_upload_enabled:-0}" == "1" ]] || return 1
+      ACTIVE_FTP_IP="${localftpip2:-}"
+      ACTIVE_FTP_USER="${localftpuser2:-}"
+      ACTIVE_FTP_PASS="${localftppass2:-}"
+      ACTIVE_FTP_DIR="${localftpdir2:-/}"
+      ;;
+    *)
+      [[ "${ftp_upload_enabled:-0}" == "1" ]] || return 1
+      ACTIVE_FTP_IP="${localftpip:-}"
+      ACTIVE_FTP_USER="${localftpuser:-}"
+      ACTIVE_FTP_PASS="${localftppass:-}"
+      ACTIVE_FTP_DIR="${localftpdir:-/}"
+      ;;
+  esac
+  [[ -n "$ACTIVE_FTP_IP" && -n "$ACTIVE_FTP_USER" && -n "$ACTIVE_FTP_PASS" ]]
+}
+
 upload_backup_artifact() {
   local artifact_path="$1"
   local remote_name="$2"
   local ftp_ok=1
   local total_size=0
   local first_name=""
+
+  if ! _resolve_ftp_credentials; then
+    localftpstat=""
+    filesize=$(stat -c%s "$artifact_path" 2>/dev/null || echo "-1")
+    upload_dosyaadi="$remote_name"
+    return 0
+  fi
 
   if [[ "${backup_split_enabled:-0}" == "1" ]]; then
     local split_mb="${backup_split_size_mb:-2048}"
@@ -85,9 +121,9 @@ upload_backup_artifact() {
       [[ -z "$first_name" ]] && first_name="$part_name"
       local part_stat
       part_stat=$(sendftpfile \
-        "$localftpip" "$localftpuser" "$localftppass" \
+        "$ACTIVE_FTP_IP" "$ACTIVE_FTP_USER" "$ACTIVE_FTP_PASS" \
         "$ftplog2" \
-        "$part" "$part_name" "${localftpdir:-/}")
+        "$part" "$part_name" "$ACTIVE_FTP_DIR")
       [[ "$part_stat" != "1" ]] && ftp_ok=0
       local psz
       psz=$(stat -c%s "$part" 2>/dev/null || echo 0)
@@ -104,9 +140,9 @@ upload_backup_artifact() {
   fi
 
   localftpstat=$(sendftpfile \
-    "$localftpip" "$localftpuser" "$localftppass" \
+    "$ACTIVE_FTP_IP" "$ACTIVE_FTP_USER" "$ACTIVE_FTP_PASS" \
     "$ftplog2" \
-    "$artifact_path" "$remote_name" "${localftpdir:-/}")
+    "$artifact_path" "$remote_name" "$ACTIVE_FTP_DIR")
   filesize=$(stat -c%s "$artifact_path" 2>/dev/null || echo "-1")
   upload_dosyaadi="$remote_name"
 }
@@ -307,14 +343,14 @@ SELECT username, expiry_date FROM dba_users
 EXIT;
 EOF
 
-  if [[ "${ftp_upload_enabled:-0}" == "1" ]]; then
-    log "FTP yukleniyor [${INSTANCE_ID}]: ${localftpip}:${localftpdir:-/} -> ${uploaddosyaadi}"
+  if _resolve_ftp_credentials; then
+    log "FTP yukleniyor [${INSTANCE_ID}]: hedef=${FTP_TARGET} ${ACTIVE_FTP_IP}:${ACTIVE_FTP_DIR:-/} -> ${uploaddosyaadi}"
     upload_backup_artifact "$artifact_path" "$uploaddosyaadi"
   else
     localftpstat=""
     filesize=$(stat -c%s "$artifact_path" 2>/dev/null || stat -f%z "$artifact_path" 2>/dev/null || echo "-1")
     upload_dosyaadi="$uploaddosyaadi"
-    log "FTP atlandi (pasif) [${INSTANCE_ID}]: ${uploaddosyaadi}"
+    log "FTP atlandi [${INSTANCE_ID}] hedef=${FTP_TARGET}: ${uploaddosyaadi}"
   fi
   gzipdosyaadi="${upload_dosyaadi:-$uploaddosyaadi}"
 

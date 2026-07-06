@@ -22,6 +22,11 @@ INSTANCE_FIELDS = (
     "localftpuser",
     "localftppass",
     "localftpdir",
+    "localftpip2",
+    "localftpuser2",
+    "localftppass2",
+    "localftpdir2",
+    "ftp2_upload_enabled",
     "retention_days",
     "backup_protect_mode",
     "backup_protect_pass",
@@ -84,6 +89,7 @@ class BackupScheduleRule(BaseModel):
     time: str = "02:00"
     day_of_week: int | None = None
     label: str = ""
+    ftp_target: Literal["primary", "secondary", "none"] = "primary"
 
     @field_validator("id")
     @classmethod
@@ -135,6 +141,14 @@ class BackupScheduleRule(BaseModel):
 
     def backup_type_label(self) -> str:
         return "Gunluk" if self.backup_type == "GUNLUK" else "Haftalik"
+
+    def ftp_target_label(self) -> str:
+        labels = {
+            "primary": "FTP-1 (birincil)",
+            "secondary": "FTP-2 (ikincil)",
+            "none": "FTP yok",
+        }
+        return labels.get(self.ftp_target, "FTP-1 (birincil)")
 
 
 class RmanScheduleRule(BaseModel):
@@ -216,6 +230,11 @@ class InstanceSettings(BaseModel):
     localftppass: str = ""
     localftpdir: str = "/"
     ftp_upload_enabled: bool = False
+    localftpip2: str = ""
+    localftpuser2: str = ""
+    localftppass2: str = ""
+    localftpdir2: str = "/"
+    ftp2_upload_enabled: bool = False
     retention_days: int = Field(default=0, ge=0, le=365)
     backup_protect_mode: Literal["gzip", "oracle", "zip"] = "gzip"
     backup_protect_pass: str = ""
@@ -246,7 +265,7 @@ class InstanceSettings(BaseModel):
             raise ValueError("backup_protect_mode gzip, oracle veya zip olmali")
         return clean
 
-    @field_validator("localftpdir")
+    @field_validator("localftpdir", "localftpdir2")
     @classmethod
     def validate_localftpdir(cls, value: str) -> str:
         raw = (value or "/").strip().replace("\\", "/")
@@ -363,10 +382,29 @@ class InstanceSettings(BaseModel):
             self.localftppass or settings.localftppass,
         )
 
+    def effective_ftp2(self, settings: "YedekSettings") -> tuple[str, str, str]:
+        return (
+            self.localftpip2 or settings.localftpip2,
+            self.localftpuser2 or settings.localftpuser2,
+            self.localftppass2 or settings.localftppass2,
+        )
+
+    def ftp_credentials_for_target(
+        self,
+        settings: "YedekSettings",
+        target: str,
+    ) -> tuple[str, str, str, str]:
+        if target == "secondary":
+            host, user, password = self.effective_ftp2(settings)
+            return host, user, password, self.localftpdir2 or "/"
+        host, user, password = self.effective_ftp(settings)
+        return host, user, password, self.localftpdir or "/"
+
     def public_dict(self) -> dict[str, Any]:
         data = self.model_dump()
         data["password"] = "***"
         data["localftppass"] = "***"
+        data["localftppass2"] = "***"
         data["backup_protect_pass"] = "***"
         return data
 
@@ -382,6 +420,9 @@ class YedekSettings(BaseModel):
     localftpip: str = "127.0.0.1"
     localftpuser: str = "ftp"
     localftppass: str = "ftp"
+    localftpip2: str = ""
+    localftpuser2: str = ""
+    localftppass2: str = ""
     pasv_address: str = "127.0.0.1"
     ftp_port: int = 21
     pasv_min_port: int = 21100

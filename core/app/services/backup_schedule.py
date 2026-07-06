@@ -66,7 +66,7 @@ class BackupScheduleService:
                     )
                 job_id = f"{inst.id}:{rule.id}"
                 self._scheduler.add_job(
-                    partial(self._queue, inst.id, rule.backup_type),
+                    partial(self._queue, inst.id, rule.backup_type, rule.ftp_target),
                     trigger=trigger,
                     id=job_id,
                     replace_existing=True,
@@ -75,7 +75,7 @@ class BackupScheduleService:
 
         logger.info("Yedek zamanlama guncellendi: %s aktif kural", job_count)
 
-    def _queue(self, instance_id: str, backup_type: str) -> None:
+    def _queue(self, instance_id: str, backup_type: str, ftp_target: str = "primary") -> None:
         try:
             settings = self._store.get()
             instance = settings.get_instance(instance_id)
@@ -95,11 +95,12 @@ class BackupScheduleService:
                 )
                 return
 
-            queue_backup(self._trigger_path, backup_type, instance_id)
+            queue_backup(self._trigger_path, backup_type, instance_id, ftp_target)
             logger.info(
-                "Zamanlanmis yedek kuyruga alindi: %s %s",
+                "Zamanlanmis yedek kuyruga alindi: %s %s ftp=%s",
                 backup_type,
                 instance_id,
+                ftp_target,
             )
         except Exception:
             logger.exception(

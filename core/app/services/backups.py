@@ -260,12 +260,22 @@ def delete_backup(settings: YedekSettings, instance: InstanceSettings, archive_n
     return removed
 
 
-def queue_backup(trigger_path: Path, tip: str, instance_id: str = "") -> None:
+def queue_backup(
+    trigger_path: Path,
+    tip: str,
+    instance_id: str = "",
+    ftp_target: str = "primary",
+) -> None:
     if tip not in {"GUNLUK", "HAFTALIK"}:
         raise ValueError("Tip GUNLUK veya HAFTALIK olmali")
     if instance_id and not re.fullmatch(r"[a-z0-9\-]+", instance_id):
         raise ValueError("Gecersiz instance id")
-    payload = f"{tip}:{instance_id}" if instance_id else tip
+    if ftp_target not in {"primary", "secondary", "none"}:
+        raise ValueError("Gecersiz FTP hedefi")
+    if instance_id:
+        payload = f"{tip}:{instance_id}:{ftp_target}"
+    else:
+        payload = tip
     trigger_path.parent.mkdir(parents=True, exist_ok=True)
     trigger_path.write_text(payload, encoding="utf-8")
 

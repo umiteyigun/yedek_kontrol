@@ -8,9 +8,16 @@ STATUS_FILE="${YEDEK_DIR}/.backup-status.json"
 
 TIP="$RAW_TIP"
 INSTANCE_ID=""
+FTP_TARGET="primary"
 if [[ "$RAW_TIP" == *:* ]]; then
   TIP="${RAW_TIP%%:*}"
-  INSTANCE_ID="${RAW_TIP#*:}"
+  rest="${RAW_TIP#*:}"
+  if [[ "$rest" == *:* ]]; then
+    INSTANCE_ID="${rest%%:*}"
+    FTP_TARGET="${rest#*:}"
+  else
+    INSTANCE_ID="$rest"
+  fi
 fi
 
 if [[ "$TIP" != "GUNLUK" && "$TIP" != "HAFTALIK" ]]; then
@@ -46,9 +53,9 @@ fi
     exit 11
   fi
   if [[ -n "$INSTANCE_ID" ]]; then
-    su - oracle -c "/usr/bin/yedek.sh $TIP $INSTANCE_ID"
+    su - oracle -c "FTP_TARGET=${FTP_TARGET} /usr/bin/yedek.sh $TIP $INSTANCE_ID"
   else
-    su - oracle -c "/usr/bin/yedek.sh $TIP"
+    su - oracle -c "FTP_TARGET=${FTP_TARGET:-primary} /usr/bin/yedek.sh $TIP"
   fi
 } >>"$RUN_LOG" 2>&1
 
