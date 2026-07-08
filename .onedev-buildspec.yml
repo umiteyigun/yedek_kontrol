@@ -17,7 +17,7 @@ jobs:
     interpreter:
       type: DefaultInterpreter
       commands: |
-        echo "@secrets:imagebuild_umit@" | docker login @server_url@ -u @job_token@ --password-stdin
+        echo "@secrets:registry-rw-token@" | docker login @server_url@ -u @job_token@ --password-stdin
     useTTY: true
     condition: SUCCESSFUL
     optional: false
