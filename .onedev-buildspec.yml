@@ -1,5 +1,70 @@
 version: 44
 jobs:
+- name: BuildAndPublishImages
+  steps:
+  - type: CheckoutStep
+    name: checkout
+    cloneCredential:
+      type: DefaultCredential
+    withLfs: false
+    withSubmodules: false
+    condition: SUCCESSFUL
+    optional: false
+  - type: CommandStep
+    name: docker-login-registry
+    runInContainer: true
+    image: docker:cli
+    interpreter:
+      type: DefaultInterpreter
+      commands: |
+        echo "@secrets:imagebuild_umit@" | docker login @server_url@ -u @job_token@ --password-stdin
+    useTTY: true
+    condition: SUCCESSFUL
+    optional: false
+  - type: BuildImageStep
+    name: yedek-core
+    buildPath: .
+    dockerfile: core/Dockerfile
+    output:
+      type: RegistryOutput
+      tags: git.trtek.tr/umiteyigun/yedek-core:@build_number@
+    condition: SUCCESSFUL
+    optional: false
+  - type: BuildImageStep
+    name: yedek-central-agent
+    buildPath: .
+    dockerfile: agent/Dockerfile
+    output:
+      type: RegistryOutput
+      tags: git.trtek.tr/umiteyigun/yedek-central-agent:@build_number@
+    condition: SUCCESSFUL
+    optional: false
+  - type: CommandStep
+    name: release-manifest
+    runInContainer: true
+    image: alpine:3.20
+    interpreter:
+      type: DefaultInterpreter
+      commands: |
+        mkdir -p release
+        cat > release/latest.env <<EOF
+        RELEASE_TARGET_TAG=@build_number@
+        RELEASE_CORE_IMAGE=git.trtek.tr/umiteyigun/yedek-core
+        RELEASE_AGENT_IMAGE=git.trtek.tr/umiteyigun/yedek-central-agent
+        EOF
+        echo "release/latest.env hazir"
+    artifacts: release/**
+    useTTY: true
+    condition: SUCCESSFUL
+    optional: false
+  triggers:
+  - type: BranchUpdateTrigger
+    branches: main
+    userMatch: anyone
+  retryCondition: never
+  maxRetries: 3
+  retryDelay: 30
+  timeout: 14400
 - name: GitHubGonder
   steps:
   - type: PushRepository

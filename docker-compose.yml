@@ -3,7 +3,9 @@
 
 services:
   core:
-    build: ./core
+    build:
+      context: .
+      dockerfile: core/Dockerfile
     container_name: yedek-core
     restart: unless-stopped
     network_mode: host
@@ -41,7 +43,9 @@ services:
 
   # Merkez hub'a outbound tünel (kurum kodu /yedek/config/central-agent.env)
   central-agent:
-    build: ./agent
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
     container_name: yedek-central-agent
     restart: unless-stopped
     network_mode: host

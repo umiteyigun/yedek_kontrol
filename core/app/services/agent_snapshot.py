@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,17 @@ from app.services.notifications import NotificationService
 from app.services.oracle_probe import instance_runtime_map
 from app.services.oracle_rman_probe import rman_runtime_map
 from app.services.server_info import collect_all_instance_oracle_stats, get_server_info
+
+
+def _load_release_state(config_dir: Path) -> dict[str, Any]:
+    path = config_dir / "release-state.json"
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
 
 
 def _is_credible_report(entry: dict[str, Any]) -> bool:
@@ -82,14 +94,16 @@ def collect_agent_snapshot(
     store: ConfigStore,
     yedek_dir: Path,
 ) -> dict[str, Any]:
+    config_dir = getattr(store, "_config_dir", Path("/app/config"))
     settings = store.get()
     runtime_map = instance_runtime_map(settings.model_dump())
     rman_runtime = rman_runtime_map(settings.model_dump())
     oracle_stats_map = collect_all_instance_oracle_stats(settings, runtime_map)
     last_reports = _last_reports_by_instance(
-        getattr(store, "_config_dir", Path("/app/config")),
+        config_dir,
         settings.instances,
     )
+    release_state = _load_release_state(config_dir)
 
     instances: list[dict[str, Any]] = []
     for inst in settings.instances:
@@ -157,5 +171,6 @@ def collect_agent_snapshot(
         "instance_count": len(instances),
         "host": host,
         "backup_status": backup_service.backup_status(yedek_dir),
+        "release": release_state,
         "instances": instances,
     }

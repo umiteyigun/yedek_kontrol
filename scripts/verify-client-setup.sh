@@ -35,6 +35,12 @@ else
   warn "git repo yok — auto-update timer beklenmiyor"
 fi
 
+if systemctl is-enabled yedek-release-update.timer &>/dev/null; then
+  ok "yedek-release-update.timer (enabled)"
+else
+  warn "yedek-release-update.timer (opsiyonel)"
+fi
+
 if command -v nginx >/dev/null 2>&1 && systemctl is-active nginx &>/dev/null; then
   ok "nginx (active)"
 else
@@ -63,13 +69,15 @@ for f in "${HOST_SCRIPTS[@]}"; do
   [[ -f "/yedek/config/$f" ]] && ok "$f" || miss "/yedek/config/$f"
 done
 
-for f in auto-update.env auto-update.local.sh central-agent.env; do
+for f in auto-update.env auto-update.local.sh central-agent.env release-update.env; do
   if [[ -f "/yedek/config/$f" ]]; then
     ok "$f"
   elif [[ "$f" == auto-update.env && ! -d "$ROOT/.git" ]]; then
     warn "$f (git kurulumu degil)"
   elif [[ "$f" == auto-update.local.sh ]]; then
     warn "$f (opsiyonel, koruma listesi)"
+  elif [[ "$f" == release-update.env ]]; then
+    warn "$f (opsiyonel, image release acilinca gerekli)"
   else
     miss "/yedek/config/$f"
   fi

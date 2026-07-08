@@ -172,6 +172,7 @@ install_systemd_services() {
   log "systemd servisleri kuruluyor (reboot sonrasi otomatik baslatma)..."
   chmod +x "$ROOT/scripts/yedek-docker-ctl.sh"
   chmod +x "$ROOT/scripts/yedek-auto-update.sh" "$ROOT/scripts/yedek-local-deploy.sh"
+  chmod +x "$ROOT/scripts/release-updater.sh" 2>/dev/null || true
 
   sed "s|__YEDEK_ROOT__|${ROOT}|g" "$ROOT/scripts/yedek-docker.service.tpl" \
     >/etc/systemd/system/yedek-docker.service
@@ -182,6 +183,31 @@ install_systemd_services() {
   systemctl enable yedek-backup-watcher.service
   systemctl restart yedek-backup-watcher.service
   log "enable: docker, yedek-docker, yedek-backup-watcher"
+}
+
+prepare_release_update_config() {
+  local dst="/yedek/config/release-update.env"
+  local example="$ROOT/config/release-update.example.env"
+  if [[ ! -f "$dst" && -f "$example" ]]; then
+    install -m 600 "$example" "$dst"
+    sed -i "s|^YEDEK_ROOT=.*|YEDEK_ROOT=${ROOT}|" "$dst" 2>/dev/null || true
+    log "Release updater config olusturuldu: $dst"
+  elif [[ -f "$dst" ]] && ! grep -q "^YEDEK_ROOT=" "$dst" 2>/dev/null; then
+    echo "YEDEK_ROOT=${ROOT}" >>"$dst"
+  fi
+}
+
+install_release_update_timer() {
+  prepare_release_update_config
+  sed "s|__YEDEK_ROOT__|${ROOT}|g" "$ROOT/scripts/yedek-release-update.service.tpl" \
+    >/etc/systemd/system/yedek-release-update.service
+  cp "$ROOT/scripts/yedek-release-update.timer.tpl" /etc/systemd/system/yedek-release-update.timer
+  touch /var/log/yedek-release-update.log
+  chmod 640 /var/log/yedek-release-update.log
+  systemctl daemon-reload
+  systemctl enable yedek-release-update.timer
+  systemctl start yedek-release-update.timer
+  log "enable: yedek-release-update.timer (~2dk image release kontrolu)"
 }
 
 prepare_auto_update_config() {
@@ -335,6 +361,7 @@ print_summary() {
     yedek-docker.service         -> docker stack (panel, API, FTP)
     yedek-backup-watcher.service -> panelden yedek tetikleme
     yedek-auto-update.timer      -> git.trtek.tr commit kontrolu (~2dk)
+    yedek-release-update.timer   -> image release kontrolu (~2dk)
     docker.service               -> container motoru
 
   Dogrulama:
@@ -343,7 +370,9 @@ print_summary() {
   Komutlar:
     systemctl status yedek-docker yedek-backup-watcher
     systemctl status yedek-auto-update.timer
+    systemctl status yedek-release-update.timer
     tail -f /var/log/yedek-auto-update.log
+    tail -f /var/log/yedek-release-update.log
     systemctl restart yedek-docker
     docker compose -f $ROOT/docker-compose.yml logs -f core
     docker compose -f $ROOT/docker-compose.yml logs -f central-agent
@@ -372,6 +401,7 @@ main() {
   bash "$ROOT/scripts/install-panel-ssl.sh" || log "UYARI: HTTPS nginx kurulumu atlandi veya basarisiz"
   install_systemd_services
   install_auto_update_timer
+  install_release_update_timer
   if [[ -x "$ROOT/scripts/verify-client-setup.sh" ]]; then
     bash "$ROOT/scripts/verify-client-setup.sh" || log "UYARI: kurulum dogrulamasinda eksikler var"
   fi
