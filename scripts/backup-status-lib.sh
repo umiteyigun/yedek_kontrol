@@ -174,3 +174,24 @@ bs_ensure_writable() {
     || true
   chmod 664 "$BACKUP_STATUS_FILE" 2>/dev/null || true
 }
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  case "${1:-}" in
+    init)
+      shift
+      bs_init "$@"
+      ;;
+    stage)
+      shift
+      bs_stage "$@"
+      ;;
+    finish)
+      shift
+      bs_finish "$@"
+      ;;
+    *)
+      echo "Kullanim: $0 init|stage|finish ..." >&2
+      exit 1
+      ;;
+  esac
+fi
