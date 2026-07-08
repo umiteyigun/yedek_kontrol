@@ -51,5 +51,5 @@ tardosyaadi=$dosyaadi"tar.gz"
 gzipdosyaadi=$dosyaadi"dmp.gz";
 tarihformat=`date --date='1 day ago' +%Y%m%d%H`;
 
-ftplog1=/tmp/remoteftplogfile
-ftplog2=/tmp/ftplofile
+ftplog1=/yedek/config/ftp-remote.log
+ftplog2=/yedek/config/ftp-upload.log

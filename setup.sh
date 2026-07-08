@@ -159,7 +159,7 @@ Wants=yedek-docker.service
 
 [Service]
 Type=simple
-ExecStart=/yedek/config/backup-watcher.sh
+ExecStart=/bin/bash /yedek/config/backup-watcher.sh
 Restart=always
 RestartSec=3
 

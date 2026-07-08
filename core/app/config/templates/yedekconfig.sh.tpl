@@ -20,5 +20,5 @@ export ORACLE_HOME
 ORACLE_TERM=xterm; export ORACLE_TERM
 PATH=/usr/sbin:$PATH; export PATH
 PATH=$ORACLE_HOME/bin:$PATH; export PATH
-ftplog1=/tmp/remoteftplogfile
-ftplog2=/tmp/ftplofile
+ftplog1=/yedek/config/ftp-remote.log
+ftplog2=/yedek/config/ftp-upload.log

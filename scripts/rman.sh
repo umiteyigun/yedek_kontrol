@@ -78,6 +78,11 @@ sendftpfile() {
     ftp_cd="cd ${remote_dir}"
   fi
 
+  if ! : >"$ftplog" 2>/dev/null; then
+    ftplog="${CONFIG_DIR}/ftp-upload-$$.log"
+    : >"$ftplog" 2>/dev/null || die "FTP log yazilamadi: $ftplog"
+  fi
+
   ftp -v -n "$server" <<END_SCRIPT >"$ftplog" 2>&1
 quote USER ${user}
 quote PASS ${pass}

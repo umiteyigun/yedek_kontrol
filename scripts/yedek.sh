@@ -46,6 +46,11 @@ sendftpfile() {
     ftp_cd="cd ${remote_dir}"
   fi
 
+  if ! : >"$ftplog" 2>/dev/null; then
+    ftplog="${CONFIG_DIR}/ftp-upload-$$.log"
+    : >"$ftplog" 2>/dev/null || die "FTP log yazilamadi: $ftplog"
+  fi
+
   ftp -v -n "$server" <<END_SCRIPT >"$ftplog" 2>&1
 quote USER ${user}
 quote PASS ${pass}
@@ -156,6 +161,9 @@ notify_backup() {
   if [[ -x "$disk_report_script" ]]; then
     # shellcheck disable=SC2046
     eval "$("$disk_report_script" "${directorydizini}")"
+    disk1=${DiskAlani1:-${disk1:-0%}}
+    disk2=${DiskAlani2:-${disk2:-0}}
+    disk3=${DiskAlani3:-${disk3:-0}}
   else
     disk1=$(df -h / 2>/dev/null | awk 'NR==2 {print $5}')
     disk1=${disk1:-0%}
