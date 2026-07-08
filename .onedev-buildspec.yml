@@ -53,7 +53,6 @@ jobs:
         RELEASE_AGENT_IMAGE=git.trtek.tr/umiteyigun/yedek-central-agent
         EOF
         echo "release/latest.env hazir"
-    artifacts: release/**
     useTTY: true
     condition: SUCCESSFUL
     optional: false
