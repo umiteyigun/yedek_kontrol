@@ -82,6 +82,16 @@ def log_content_api(
     )
 
 
+@router.get("/api/v1/backup/status")
+def backup_status_api(request: Request):
+    if not get_current_user(request):
+        return JSONResponse({"ok": False, "error": "Oturum gerekli"}, status_code=401)
+    if not can(request, "backups", "view"):
+        return JSONResponse({"ok": False, "error": "Yetki gerekli"}, status_code=403)
+    status = backup_service.backup_status(Path(request.app.state.yedek_dir))
+    return JSONResponse({"ok": True, "status": status})
+
+
 @router.get("/yedekler", response_class=HTMLResponse)
 def backups_page(request: Request):
     if not get_current_user(request):

@@ -70,9 +70,48 @@
     </section>
 
     {% if status.state == 'running' %}
-    <div class="status-banner running panel-3d reveal reveal-d2">
-      <span class="pulse" style="width:8px;height:8px;border-radius:50%;background:currentColor;display:inline-block;box-shadow:0 0 12px currentColor;"></span>
-      Yedek su an calisiyor{% if status.instance_id %} ({{ status.instance_id }}){% endif %} — sayfayi yenileyin.
+    <div class="status-banner running panel-3d reveal reveal-d2" id="backup-live-banner" data-poll="1" data-api-prefix="{{ proxy_prefix_for(request) }}">
+      <div class="backup-live-head">
+        <span class="pulse" style="width:8px;height:8px;border-radius:50%;background:currentColor;display:inline-block;box-shadow:0 0 12px currentColor;"></span>
+        <strong id="backup-live-title">Yedek calisiyor{% if status.instance_id %} ({{ status.instance_id }}){% endif %}</strong>
+        <span class="muted" id="backup-live-stage">{{ status.stage_label or 'Baslatiliyor' }}</span>
+        <span class="backup-live-timer" id="backup-live-timer"></span>
+      </div>
+      <ol class="backup-stage-track" id="backup-stage-track">
+        {% for st in status.stages_list %}
+        <li class="backup-stage-item {% if st.active %}active{% elif st.done %}done{% else %}pending{% endif %}" data-stage="{{ st.key }}">
+          <span class="backup-stage-dot"></span>
+          <span class="backup-stage-label">{{ st.label }}</span>
+          <span class="backup-stage-duration" data-stage-duration="{{ st.key }}">{{ st.duration_label }}</span>
+        </li>
+        {% endfor %}
+      </ol>
+      <p class="backup-live-meta muted" id="backup-live-meta">
+        Baslangic: {{ status.started_at or status.updated_at or '—' }}
+        {% if status.log_file and can_view_backups %}
+        · <button type="button" class="btn-log-view btn-ghost btn-sm" data-log-source="panel" data-log-name="{{ status.log_file }}">Canli log</button>
+        {% endif %}
+      </p>
+    </div>
+    {% elif status.state in ('done', 'failed', 'skipped') and status.stages_list %}
+    <div class="status-banner {% if status.state == 'done' %}done{% else %}failed{% endif %} panel-3d reveal reveal-d2" id="backup-summary-banner">
+      <strong>
+        {% if status.state == 'done' %}Son yedek tamamlandi{% elif status.state == 'skipped' %}Yedek atlandi{% else %}Son yedek basarisiz{% endif %}
+      </strong>
+      {% if status.total_duration_label %}<span class="backup-total-duration">Toplam: {{ status.total_duration_label }}</span>{% endif %}
+      <ol class="backup-stage-track compact">
+        {% for st in status.stages_list %}
+        {% if st.duration_label %}
+        <li class="backup-stage-item done">
+          <span class="backup-stage-label">{{ st.label }}</span>
+          <span class="backup-stage-duration">{{ st.duration_label }}</span>
+        </li>
+        {% endif %}
+        {% endfor %}
+      </ol>
+      {% if can_view_backups and status.log_file %}
+      <button type="button" class="btn-log-view btn-ghost btn-sm" data-log-source="panel" data-log-name="{{ status.log_file }}">Log</button>
+      {% endif %}
     </div>
     {% elif status.state == 'done' %}
     <div class="status-banner done panel-3d reveal reveal-d2">

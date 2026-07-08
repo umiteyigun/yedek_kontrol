@@ -5,6 +5,10 @@ RAW_TIP="${1:-GUNLUK}"
 YEDEK_DIR="/yedek/orayedek"
 RUN_LOG="${YEDEK_DIR}/panel-backup-$(date +%Y%m%d%H%M%S).log"
 STATUS_FILE="${YEDEK_DIR}/.backup-status.json"
+BACKUP_STATUS_FILE="$STATUS_FILE"
+
+# shellcheck source=/dev/null
+source /yedek/config/backup-status-lib.sh
 
 TIP="$RAW_TIP"
 INSTANCE_ID=""
@@ -28,17 +32,39 @@ fi
 write_status() {
   local state="$1"
   local exit_code="${2:-0}"
-  cat >"$STATUS_FILE" <<EOF
-{"state":"$state","tip":"$TIP","instance_id":"$INSTANCE_ID","exit_code":$exit_code,"log_file":"$(basename "$RUN_LOG")","updated_at":"$(date -Iseconds)"}
-EOF
+  if [[ "$state" == "running" ]]; then
+    bs_init \
+      --state running \
+      --stage preflight \
+      --tip "$TIP" \
+      --instance-id "$INSTANCE_ID" \
+      --log-file "$(basename "$RUN_LOG")" \
+      --backup-kind expdp
+    bs_ensure_writable
+    return
+  fi
+  bs_finish --state "$state" --exit-code "$exit_code"
 }
 
 write_status "running" 0
 if ! DISK_MSG="$(/yedek/config/disk-check-backup.sh "$TIP" "$INSTANCE_ID" 2>&1)"; then
-  write_status "skipped" 12
-  cat >"$STATUS_FILE" <<EOF
-{"state":"skipped","tip":"$TIP","instance_id":"$INSTANCE_ID","exit_code":12,"log_file":"$(basename "$RUN_LOG")","reason":"${DISK_MSG//$'\n'/ }","updated_at":"$(date -Iseconds)"}
-EOF
+  bs_finish --state skipped --exit-code 12
+  python3 - "$STATUS_FILE" "$DISK_MSG" <<'PY'
+import json, os, sys
+from datetime import datetime
+path, reason = sys.argv[1], sys.argv[2].replace("\n", " ")
+data = {}
+if os.path.isfile(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        pass
+data["reason"] = reason
+data["updated_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(data, fh, ensure_ascii=False)
+PY
   echo "=== Yedek atlandi (disk): $DISK_MSG ===" >>"$RUN_LOG"
   exit 12
 fi

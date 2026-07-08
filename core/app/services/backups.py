@@ -1,10 +1,107 @@
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from app.config.models import InstanceSettings, YedekSettings
+
+STAGE_ORDER = ("preflight", "exporting", "compressing", "ftp_upload", "notifying")
+STAGE_LABELS = {
+    "preflight": "On kontrol",
+    "exporting": "Yedek aliniyor",
+    "compressing": "Sikistiriliyor",
+    "ftp_upload": "FTP gonderimi",
+    "notifying": "Bildirim",
+    "done": "Tamamlandi",
+}
+
+
+def _parse_iso_ts(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    text = str(value).replace("Z", "+00:00")
+    try:
+        ts = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts
+
+
+def format_duration(sec: int | float | None) -> str:
+    if sec is None or sec < 0:
+        return ""
+    total = int(sec)
+    if total < 60:
+        return f"{total} sn"
+    minutes, seconds = divmod(total, 60)
+    if minutes < 60:
+        return f"{minutes} dk" + (f" {seconds} sn" if seconds else "")
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} sa {minutes} dk"
+
+
+def _live_duration_sec(started_at: str | None) -> int | None:
+    start = _parse_iso_ts(started_at)
+    if not start:
+        return None
+    now = datetime.now(timezone.utc)
+    return max(0, int((now - start.astimezone(timezone.utc)).total_seconds()))
+
+
+def enrich_backup_status(data: dict) -> dict:
+    """Asama surelerini okunabilir forma getir."""
+    out = dict(data)
+    stages_raw = out.get("stages") if isinstance(out.get("stages"), dict) else {}
+    stages: list[dict] = []
+    current_stage = str(out.get("stage") or "")
+    state = str(out.get("state") or "idle")
+
+    for key in STAGE_ORDER:
+        raw = stages_raw.get(key)
+        if not isinstance(raw, dict):
+            continue
+        ended = raw.get("ended_at")
+        duration_sec = raw.get("duration_sec")
+        duration_label = str(raw.get("duration_label") or "")
+        if duration_sec is None and not ended and key == current_stage and state == "running":
+            duration_sec = _live_duration_sec(raw.get("started_at") or out.get("stage_started_at"))
+            if duration_sec is not None:
+                duration_label = format_duration(duration_sec)
+        elif duration_sec is not None and not duration_label:
+            duration_label = format_duration(duration_sec)
+        stages.append(
+            {
+                "key": key,
+                "label": STAGE_LABELS.get(key, key),
+                "started_at": raw.get("started_at") or "",
+                "ended_at": ended or "",
+                "duration_sec": duration_sec,
+                "duration_label": duration_label,
+                "active": key == current_stage and state == "running",
+                "done": bool(ended) or (state in {"done", "failed", "skipped"} and key != current_stage),
+            }
+        )
+
+    out["stages_list"] = stages
+    out["stage_label"] = STAGE_LABELS.get(current_stage, current_stage or "—")
+    if state == "running" and current_stage:
+        live = _live_duration_sec(out.get("stage_started_at"))
+        if live is not None:
+            out["stage_live_duration_sec"] = live
+            out["stage_live_duration_label"] = format_duration(live)
+
+    total_sec = out.get("total_duration_sec")
+    if total_sec is None and out.get("started_at") and state in {"done", "failed", "skipped"}:
+        start = _parse_iso_ts(str(out.get("started_at")))
+        end = _parse_iso_ts(str(out.get("updated_at")))
+        if start and end:
+            total_sec = max(0, int((end - start.astimezone(timezone.utc)).total_seconds()))
+    if total_sec is not None and not out.get("total_duration_label"):
+        out["total_duration_label"] = format_duration(total_sec)
+    return out
 
 
 @dataclass
@@ -295,35 +392,31 @@ def queue_rman_backup(trigger_path: Path, tip: str, instance_id: str = "") -> No
 def backup_status(yedek_dir: Path) -> dict:
     status_file = yedek_dir / ".backup-status.json"
     running_lock = yedek_dir / ".backup-running"
-    if running_lock.exists():
-        return {
-            "state": "running",
-            "tip": "",
-            "instance_id": "",
-            "exit_code": 0,
-            "log_file": "",
-            "updated_at": "",
-        }
-    if not status_file.exists():
-        return {
-            "state": "idle",
-            "tip": "",
-            "instance_id": "",
-            "exit_code": 0,
-            "log_file": "",
-            "updated_at": "",
-        }
-    try:
-        data = json.loads(status_file.read_text(encoding="utf-8"))
-        data.setdefault("instance_id", "")
-        data.setdefault("reason", "")
-        return data
-    except json.JSONDecodeError:
-        return {
-            "state": "unknown",
-            "tip": "",
-            "instance_id": "",
-            "exit_code": -1,
-            "log_file": "",
-            "updated_at": "",
-        }
+    defaults = {
+        "state": "idle",
+        "stage": "",
+        "tip": "",
+        "instance_id": "",
+        "exit_code": 0,
+        "log_file": "",
+        "updated_at": "",
+        "reason": "",
+        "stages": {},
+        "stages_list": [],
+        "stage_label": "",
+    }
+    data = dict(defaults)
+    if status_file.exists():
+        try:
+            loaded = json.loads(status_file.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                data.update(loaded)
+        except json.JSONDecodeError:
+            data["state"] = "unknown"
+            data["exit_code"] = -1
+    if running_lock.exists() and data.get("state") not in {"running"}:
+        data["state"] = "running"
+    data.setdefault("instance_id", "")
+    data.setdefault("reason", "")
+    data.setdefault("stages", {})
+    return enrich_backup_status(data)

@@ -11,6 +11,7 @@ import httpx
 logger = logging.getLogger("yedek-agent.metrics")
 
 METRICS_INTERVAL_SEC = 900  # 15 dk
+METRICS_INTERVAL_RUNNING_SEC = 15  # yedek calisirken
 
 
 async def fetch_panel_snapshot(panel_url: str, *, verify_tls: bool) -> dict:
@@ -25,7 +26,7 @@ async def fetch_panel_snapshot(panel_url: str, *, verify_tls: bool) -> dict:
     return data
 
 
-async def send_metrics_report(ws, settings) -> None:
+async def send_metrics_report(ws, settings) -> dict | None:
     try:
         snapshot = await fetch_panel_snapshot(
             settings.panel_local_url,
@@ -36,14 +37,27 @@ async def send_metrics_report(ws, settings) -> None:
             "Metrik gonderildi: instances=%s",
             snapshot.get("instance_count"),
         )
+        return snapshot
     except Exception as exc:
         logger.warning("Metrik toplanamadi: %s", exc)
+        return None
+
+
+def _backup_is_running(snapshot: dict | None) -> bool:
+    if not snapshot:
+        return False
+    status = snapshot.get("backup_status")
+    if isinstance(status, dict) and str(status.get("state") or "") == "running":
+        return True
+    return False
 
 
 async def metrics_loop(ws, settings, is_enabled) -> None:
-    """Onayli agent icin 15 dk'da bir panel snapshot gonder."""
+    """Onayli agent icin panel snapshot gonder; yedek calisirken daha sik."""
     await asyncio.sleep(5)
+    last_snapshot: dict | None = None
     while True:
         if is_enabled():
-            await send_metrics_report(ws, settings)
-        await asyncio.sleep(METRICS_INTERVAL_SEC)
+            last_snapshot = await send_metrics_report(ws, settings)
+        delay = METRICS_INTERVAL_RUNNING_SEC if _backup_is_running(last_snapshot) else METRICS_INTERVAL_SEC
+        await asyncio.sleep(delay)

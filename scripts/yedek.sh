@@ -11,6 +11,18 @@ readonly PARAMS_FILE="${CONFIG_DIR}/yedek-params.sh"
 readonly CONFIG_FILE="${CONFIG_DIR}/yedekconfig.sh"
 readonly INSTANCES_DIR="${CONFIG_DIR}/instances"
 readonly INSTANCES_LIST="${CONFIG_DIR}/instances.list"
+readonly BACKUP_STATUS_FILE="/yedek/orayedek/.backup-status.json"
+
+if [[ -f "${CONFIG_DIR}/backup-status-lib.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "${CONFIG_DIR}/backup-status-lib.sh"
+fi
+
+bs_stage_if_available() {
+  if declare -F bs_stage >/dev/null 2>&1; then
+    bs_stage "$1" "${INSTANCE_ID:-}"
+  fi
+}
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 die() { log "HATA: $*"; exit 1; }
@@ -255,6 +267,7 @@ backup_current_instance() {
   fi
 
   log "Yedek basliyor [${INSTANCE_ID}]: sid=${ORACLE_SID} tip=${yedektipi} schema=${schemas} kurum=${hastane} mod=${backup_protect_mode} (SYSDBA)"
+  bs_stage_if_available exporting
 
   expdp_common=(
     "$ORACLE_HOME/bin/expdp" userid='"/ as sysdba"'
@@ -315,6 +328,7 @@ backup_current_instance() {
   } >> "${directorydizini}${logdosyaadi}" 2>&1
 
   artifact_path=""
+  bs_stage_if_available compressing
   case "$backup_protect_mode" in
     oracle)
       log "Oracle sifreli yedek sikistiriliyor [${INSTANCE_ID}]: ${directorydizini}${dmpdosyaadi}"
@@ -352,6 +366,7 @@ EXIT;
 EOF
 
   if _resolve_ftp_credentials; then
+    bs_stage_if_available ftp_upload
     log "FTP yukleniyor [${INSTANCE_ID}]: hedef=${FTP_TARGET} ${ACTIVE_FTP_IP}:${ACTIVE_FTP_DIR:-/} -> ${uploaddosyaadi}"
     upload_backup_artifact "$artifact_path" "$uploaddosyaadi"
   else
@@ -362,6 +377,7 @@ EOF
   fi
   gzipdosyaadi="${upload_dosyaadi:-$uploaddosyaadi}"
 
+  bs_stage_if_available notifying
   notify_backup
   log "Yedek tamamlandi [${INSTANCE_ID}]: ${gzipdosyaadi} (${filesize} byte) FTP=${localftpstat} mod=${backup_protect_mode}"
 }
