@@ -27,7 +27,7 @@ jobs:
     dockerfile: core/Dockerfile
     output:
       type: RegistryOutput
-      tags: git.trtek.tr/umiteyigun/yedek-core:@build_number@
+      tags: git.trtek.tr/umiteyigun/yedek_kontrol/yedek-core:@build_number@
     condition: SUCCESSFUL
     optional: false
   - type: BuildImageStep
@@ -36,7 +36,7 @@ jobs:
     dockerfile: agent/Dockerfile
     output:
       type: RegistryOutput
-      tags: git.trtek.tr/umiteyigun/yedek-central-agent:@build_number@
+      tags: git.trtek.tr/umiteyigun/yedek_kontrol/yedek-central-agent:@build_number@
     condition: SUCCESSFUL
     optional: false
   - type: CommandStep
@@ -49,8 +49,8 @@ jobs:
         mkdir -p release
         cat > release/latest.env <<EOF
         RELEASE_TARGET_TAG=@build_number@
-        RELEASE_CORE_IMAGE=git.trtek.tr/umiteyigun/yedek-core
-        RELEASE_AGENT_IMAGE=git.trtek.tr/umiteyigun/yedek-central-agent
+        RELEASE_CORE_IMAGE=git.trtek.tr/umiteyigun/yedek_kontrol/yedek-core
+        RELEASE_AGENT_IMAGE=git.trtek.tr/umiteyigun/yedek_kontrol/yedek-central-agent
         EOF
         echo "release/latest.env hazir"
     useTTY: true
