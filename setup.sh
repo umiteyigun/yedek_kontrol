@@ -84,6 +84,62 @@ compose() {
   fi
 }
 
+is_public_runtime() {
+  [[ ! -f "$ROOT/core/Dockerfile" ]]
+}
+
+compose_files() {
+  if [[ -f "$ROOT/docker-compose.release.yml" ]]; then
+    echo "-f" "$ROOT/docker-compose.yml" "-f" "$ROOT/docker-compose.release.yml"
+  else
+    echo "-f" "$ROOT/docker-compose.yml"
+  fi
+}
+
+write_release_compose_override() {
+  local env_file="/yedek/config/release-update.env"
+  [[ -f "$env_file" ]] || fail "Public kurulum: $env_file yok (release-update.example.env kopyalayin)"
+  # shellcheck source=/dev/null
+  source "$env_file"
+  : "${RELEASE_TARGET_TAG:?RELEASE_TARGET_TAG bos — $env_file doldurun}"
+  : "${RELEASE_CORE_IMAGE:?RELEASE_CORE_IMAGE bos}"
+  : "${RELEASE_AGENT_IMAGE:?RELEASE_AGENT_IMAGE bos}"
+
+  cat >"$ROOT/docker-compose.release.yml" <<EOF
+services:
+  core:
+    image: ${RELEASE_CORE_IMAGE}:${RELEASE_TARGET_TAG}
+  central-agent:
+    image: ${RELEASE_AGENT_IMAGE}:${RELEASE_TARGET_TAG}
+EOF
+
+  # Public compose ${RELEASE_*} degiskenlerini .env'den okur
+  touch "$ROOT/.env"
+  for kv in \
+    "RELEASE_CORE_IMAGE=${RELEASE_CORE_IMAGE}" \
+    "RELEASE_AGENT_IMAGE=${RELEASE_AGENT_IMAGE}" \
+    "RELEASE_IMAGE_TAG=${RELEASE_TARGET_TAG}"; do
+    key="${kv%%=*}"
+    if grep -q "^${key}=" "$ROOT/.env" 2>/dev/null; then
+      sed -i "s|^${key}=.*|${kv}|" "$ROOT/.env"
+    else
+      echo "$kv" >>"$ROOT/.env"
+    fi
+  done
+
+  export RELEASE_IMAGE_TAG="$RELEASE_TARGET_TAG"
+  if [[ -n "${RELEASE_READONLY_TOKEN:-}" && "${RELEASE_SKIP_PULL:-0}" != "1" ]]; then
+    echo "$RELEASE_READONLY_TOKEN" | docker login "${RELEASE_REGISTRY_HOST:-git.trtek.tr}" \
+      -u "${RELEASE_REGISTRY_USER:-oauth2}" --password-stdin >/dev/null 2>&1 || \
+      log "UYARI: registry login basarisiz"
+  fi
+  if [[ "${RELEASE_SKIP_PULL:-0}" != "1" ]]; then
+    log "Image cekiliyor: ${RELEASE_CORE_IMAGE}:${RELEASE_TARGET_TAG}"
+    docker pull "${RELEASE_CORE_IMAGE}:${RELEASE_TARGET_TAG}"
+    docker pull "${RELEASE_AGENT_IMAGE}:${RELEASE_TARGET_TAG}" || true
+  fi
+}
+
 # --- 2. Dizinler ve bos config ---
 prepare_config() {
   log "Dizinler hazirlaniyor..."
@@ -234,6 +290,11 @@ prepare_auto_update_config() {
 }
 
 install_auto_update_timer() {
+  if is_public_runtime; then
+    log "Git auto-update atlandi (public runtime — release-updater kullanin)"
+    return 0
+  fi
+
   if [[ ! -d "$ROOT/.git" ]]; then
     log "Auto-update atlandi: $ROOT git repo degil (tarball kurulum?)"
     return 0
@@ -298,8 +359,13 @@ start_central_agent() {
     log "Merkez agent atlandi: $cfg icinde ORG_ENROLLMENT_CODE bos"
     return 0
   }
-  log "yedek-central-agent build ve baslatiliyor..."
-  compose --profile central up -d --build central-agent
+  log "yedek-central-agent baslatiliyor..."
+  if is_public_runtime; then
+    # shellcheck disable=SC2046
+    compose --profile central $(compose_files) up -d central-agent
+  else
+    compose --profile central up -d --build central-agent
+  fi
   sleep 2
   if docker ps --format '{{.Names}}' | grep -q '^yedek-central-agent$'; then
     log "yedek-central-agent calisiyor (hub onayi bekleniyor olabilir)"
@@ -311,10 +377,23 @@ start_central_agent() {
 # --- 4. Docker compose ---
 start_stack() {
   log "Compose dosyasi kontrol ediliyor..."
-  compose config >/dev/null
+  if is_public_runtime; then
+    prepare_release_update_config
+    write_release_compose_override
+    # shellcheck disable=SC2046
+    compose $(compose_files) config >/dev/null
+    log "yedek-core baslatiliyor (registry image)..."
+  else
+    compose config >/dev/null
+    log "yedek-core build ve baslatiliyor..."
+  fi
 
-  log "yedek-core build ve baslatiliyor..."
-  compose up -d --build core
+  if is_public_runtime; then
+    # shellcheck disable=SC2046
+    compose $(compose_files) up -d core
+  else
+    compose up -d --build core
+  fi
 
   sleep 3
   if docker ps --format '{{.Names}}' | grep -q '^yedek-core$'; then
@@ -341,7 +420,7 @@ print_summary() {
 
   Web Panel : https://${ip}:${PANEL_HTTPS_PORT:-8443}  (self-signed SSL)
   Yerel API : http://127.0.0.1:8090  (yedek.sh — degismedi)
-  Master    : credentials/master.txt dosyasina bakin
+  Master    : /yedek/credentials/master.txt (repo disinda)
 
   Giris:
     - Master kullanici (LDAP kapaliyken veya acil erisim)
@@ -360,7 +439,7 @@ print_summary() {
   Systemd (reboot sonrasi otomatik):
     yedek-docker.service         -> docker stack (panel, API, FTP)
     yedek-backup-watcher.service -> panelden yedek tetikleme
-    yedek-auto-update.timer      -> git.trtek.tr commit kontrolu (~2dk)
+    yedek-auto-update.timer      -> git commit kontrolu (~2dk, private repo)
     yedek-release-update.timer   -> image release kontrolu (~2dk)
     docker.service               -> container motoru
 

@@ -75,12 +75,28 @@ deploy_tag() {
   cat >"$COMPOSE_OVERRIDE" <<EOF
 services:
   core:
-    build: null
     image: ${RELEASE_CORE_IMAGE}:${tag}
   central-agent:
-    build: null
     image: ${RELEASE_AGENT_IMAGE}:${tag}
 EOF
+
+  # Public compose ${RELEASE_*} degiskenlerini .env'den okur
+  ensure_release_env_vars() {
+    local envf="${ROOT}/.env"
+    touch "$envf"
+    for kv in \
+      "RELEASE_CORE_IMAGE=${RELEASE_CORE_IMAGE}" \
+      "RELEASE_AGENT_IMAGE=${RELEASE_AGENT_IMAGE}" \
+      "RELEASE_IMAGE_TAG=${tag}"; do
+      local key="${kv%%=*}"
+      if grep -q "^${key}=" "$envf" 2>/dev/null; then
+        sed -i "s|^${key}=.*|${kv}|" "$envf"
+      else
+        echo "$kv" >>"$envf"
+      fi
+    done
+  }
+  ensure_release_env_vars
 
   if [[ "$RELEASE_SKIP_PULL" != "1" ]]; then
     docker pull "${RELEASE_CORE_IMAGE}:${tag}" >/dev/null
@@ -97,9 +113,9 @@ EOF
   fi
 
   cd "$ROOT"
-  compose -f docker-compose.yml -f docker-compose.release.yml up -d core
+  compose -f docker-compose.yml -f docker-compose.release.yml up -d --force-recreate core
   if [[ -f /yedek/config/central-agent.env ]] && grep -q '^ORG_ENROLLMENT_CODE=' /yedek/config/central-agent.env; then
-    compose --profile central -f docker-compose.yml -f docker-compose.release.yml up -d central-agent || true
+    compose --profile central -f docker-compose.yml -f docker-compose.release.yml up -d --force-recreate central-agent || true
   fi
 
   if ! curl -sf --max-time 8 http://127.0.0.1:8090/health >/dev/null; then

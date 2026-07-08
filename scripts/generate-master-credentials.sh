@@ -1,11 +1,14 @@
 #!/bin/bash
 # Master panel kullanicisi ve session secret uretir (.env)
+# Credential dosyasi git agacinda DEGIL: /yedek/credentials/master.txt
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ROOT}/.env"
-CREDS_DIR="${ROOT}/credentials"
+# Host-side secret store (public clone /opt/yedek_kontrol icinde tutulmaz)
+CREDS_DIR="${YEDEK_CREDS_DIR:-/yedek/credentials}"
 CREDS_FILE="${CREDS_DIR}/master.txt"
+LEGACY_CREDS_FILE="${ROOT}/credentials/master.txt"
 
 gen_pass() {
   openssl rand -base64 48 | tr -d '/+=' | head -c 32
@@ -35,14 +38,32 @@ write_creds_file() {
   Sifre     : ${pass}
 
   Not: LDAP aktif olsa bile bu kullanici ile giris yapilabilir.
+  Konum    : ${CREDS_FILE}  (git/repo icinde DEGIL)
   Dosya izni: chmod 600
 ================================================================================
 EOF
   chmod 600 "$CREDS_FILE"
 }
 
+migrate_legacy_creds() {
+  # Eski public clone icindeki credentials/master.txt -> /yedek/credentials
+  if [[ -f "$LEGACY_CREDS_FILE" && ! -f "$CREDS_FILE" ]]; then
+    mkdir -p "$CREDS_DIR"
+    chmod 700 "$CREDS_DIR"
+    mv -f "$LEGACY_CREDS_FILE" "$CREDS_FILE"
+    chmod 600 "$CREDS_FILE"
+    echo "Eski credential tasiandi: $LEGACY_CREDS_FILE -> $CREDS_FILE"
+  fi
+  # Repo agacindaki credentials klasorunu temizle (sifre sizintisi olmasin)
+  if [[ -d "${ROOT}/credentials" ]]; then
+    rm -f "${ROOT}/credentials/master.txt" 2>/dev/null || true
+    rmdir "${ROOT}/credentials" 2>/dev/null || true
+  fi
+}
+
 mkdir -p "$CREDS_DIR"
 chmod 700 "$CREDS_DIR"
+migrate_legacy_creds
 [[ -f "$ENV_FILE" ]] || cp "${ROOT}/.env.example" "$ENV_FILE"
 
 MASTER_USER="$(grep -m1 '^MASTER_USER=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"

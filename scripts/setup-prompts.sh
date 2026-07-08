@@ -293,7 +293,7 @@ print_config_hints() {
   echo
   echo "  Yapilandirma dosyalari:"
   echo "    Panel / master    : $env_file"
-  echo "    Master sifre      : $PROMPT_ROOT/credentials/master.txt"
+  echo "    Master sifre      : /yedek/credentials/master.txt"
   echo "    Oracle ayarlari   : $PROMPT_ROOT/config/settings.json (panelden de)"
   echo "    Oto-guncelleme    : $auto_cfg"
   echo "    Merkez agent      : $agent_cfg"
