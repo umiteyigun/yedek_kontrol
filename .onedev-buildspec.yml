@@ -64,12 +64,16 @@ jobs:
       type: DefaultInterpreter
       commands: |
         apk add --no-cache git curl
-        git config --global user.email "ci@trtek.tr"
+        git config --global user.email "ci@@trtek.tr"
         git config --global user.name "OneDev CI"
         git clone "https://@job_token@@server_url@/yedek_kontrol_public.git" /tmp/public
         cd /tmp/public
         mkdir -p release
-        cp "$onedev_workspace$/release/latest.env" release/latest.env
+        cat > release/latest.env <<EOF
+        RELEASE_TARGET_TAG=@build_number@
+        RELEASE_CORE_IMAGE=git.trtek.tr/umiteyigun/yedek_kontrol/yedek-core
+        RELEASE_AGENT_IMAGE=git.trtek.tr/umiteyigun/yedek_kontrol/yedek-central-agent
+        EOF
         git add release/latest.env
         git diff --staged --quiet || git commit -m "release: image tag @build_number@"
         git push origin HEAD:main
