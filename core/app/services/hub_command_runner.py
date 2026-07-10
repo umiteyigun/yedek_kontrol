@@ -913,6 +913,72 @@ def _command_service_health(settings: YedekSettings, inst: InstanceSettings) -> 
     }
 
 
+RELEASE_TAG_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+def _run_on_host(shell_body: str, timeout: int = 30) -> tuple[int, str, str]:
+    """Host namespace'de root bash (nsenter)."""
+    cmd = ["nsenter", "-t", "1", "-m", "-p", "-i", "--", "/bin/bash", "-lc", shell_body]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        return proc.returncode, (proc.stdout or "").strip(), (proc.stderr or "").strip()
+    except subprocess.TimeoutExpired:
+        return 124, "", "Zaman asimi"
+    except FileNotFoundError:
+        return 127, "", "nsenter bulunamadi"
+
+
+def _command_release_update(
+    settings: YedekSettings,
+    inst: InstanceSettings,
+    params: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Image release guncelle — fire-and-forget (core recreate HTTP'yi keser)."""
+    params = params or {}
+    tag = str(params.get("tag") or "").strip()
+    if not tag or not RELEASE_TAG_RE.fullmatch(tag):
+        raise ValueError("Gecersiz release tag")
+
+    script_candidates = (
+        "/opt/yedek_kontrol/scripts/release-updater.sh",
+        "/yedek/config/release-updater.sh",
+    )
+    code, out, err = _run_on_host(
+        "for s in "
+        + " ".join(script_candidates)
+        + '; do [[ -x "$s" ]] && echo "$s" && exit 0; done; exit 1',
+        timeout=10,
+    )
+    if code != 0 or not out:
+        raise ValueError("release-updater.sh bulunamadi (host)")
+    script = out.splitlines()[0].strip()
+
+    # Async: nohup — core recreate HTTP yaniti kesebilir
+    start_cmd = (
+        f"nohup env RELEASE_UPDATER_ENABLED=1 RELEASE_TRACK=pin RELEASE_TARGET_TAG={tag} "
+        f"/bin/bash {script} --tag {tag} "
+        f">>/var/log/yedek-release-update.log 2>&1 </dev/null & echo started"
+    )
+    code, out, err = _run_on_host(start_cmd, timeout=20)
+    if code != 0 and "started" not in out:
+        raise ValueError(err or out or f"release baslatilamadi (exit {code})")
+
+    return {
+        "started": True,
+        "target_tag": tag,
+        "script": script,
+        "hostname": settings.hostname,
+        "message": f"Release guncelleme baslatildi (tag={tag})",
+        "detail": out or err,
+    }
+
+
 COMMAND_HANDLERS: dict[str, Any] = {
     "disk_report": _command_disk_report,
     "backup_inventory": _command_backup_inventory,
@@ -947,6 +1013,7 @@ COMMAND_HANDLERS: dict[str, Any] = {
     "transmission_api_test": _command_transmission_api_test,
     "transmission_notification_history": _command_transmission_notification_history,
     "transmission_ftp_remote_inventory": _command_transmission_ftp_remote_inventory,
+    "release_update": _command_release_update,
 }
 
 COMMAND_LABELS: dict[str, str] = {
@@ -983,6 +1050,7 @@ COMMAND_LABELS: dict[str, str] = {
     "transmission_api_test": "Merkezi API baglanti testi",
     "transmission_notification_history": "Son yedek bildirimleri",
     "transmission_ftp_remote_inventory": "Uzak FTP yedek envanteri",
+    "release_update": "Image release guncelle (manuel tag)",
 }
 
 
@@ -1007,7 +1075,7 @@ def run_command(
         raise ValueError("Instance bulunamadi")
     params = parameters or {}
     handler = COMMAND_HANDLERS[key]
-    if key == "oracle_password_change":
+    if key in {"oracle_password_change", "release_update"}:
         report = handler(settings, inst, params)
     else:
         report = handler(settings, inst)

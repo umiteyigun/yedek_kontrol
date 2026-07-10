@@ -36,10 +36,10 @@ def hub_command_run(request: Request, body: HubCommandRunBody):
     proxy_user = resolve_central_proxy_user(request)
     if not proxy_user:
         raise HTTPException(403, "Merkez oturumu gerekli")
-    if body.command == "oracle_password_change":
+    if body.command in {"oracle_password_change", "release_update"}:
         hub_role = str(proxy_user.get("hub_role") or "").lower()
         if hub_role != "superadmin":
-            raise HTTPException(403, "Sifre degisimi icin superadmin gerekli")
+            raise HTTPException(403, "Bu komut icin superadmin gerekli")
     store = request.app.state.store
     settings = store.get()
     try:

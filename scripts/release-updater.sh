@@ -11,6 +11,29 @@ COMPOSE_OVERRIDE="${ROOT}/docker-compose.release.yml"
 
 ts() { date '+%Y-%m-%d %H:%M:%S'; }
 
+# Manuel override: release-updater.sh --tag 16  (veya ilk arguman)
+FORCE_TAG=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --tag)
+      FORCE_TAG="${2:-}"
+      shift 2
+      ;;
+    --tag=*)
+      FORCE_TAG="${1#--tag=}"
+      shift
+      ;;
+    -*)
+      echo "Kullanim: $0 [--tag TAG]" >&2
+      exit 2
+      ;;
+    *)
+      FORCE_TAG="$1"
+      shift
+      ;;
+  esac
+done
+
 if [[ -f "$ENV_FILE" ]]; then
   # shellcheck source=/dev/null
   source "$ENV_FILE"
@@ -26,6 +49,13 @@ fi
 : "${RELEASE_READONLY_TOKEN:=}"
 : "${RELEASE_REGISTRY_USER:=oauth2}"
 : "${RELEASE_SKIP_PULL:=0}"
+
+# Hub/manuel tetik: sabit tag zorla (latest track'i gecici kapat)
+if [[ -n "$FORCE_TAG" ]]; then
+  RELEASE_TARGET_TAG="$FORCE_TAG"
+  RELEASE_TRACK=pin
+  RELEASE_UPDATER_ENABLED=1
+fi
 
 resolve_target_tag_from_registry() {
   local py=""
