@@ -46,25 +46,51 @@ write_status() {
   bs_finish --state "$state" --exit-code "$exit_code"
 }
 
+_oracle_chown() {
+  chown -R oracle:oinstall "$@" 2>/dev/null \
+    || chown -R oracle:dba "$@" 2>/dev/null \
+    || true
+}
+
+prepare_backup_dirs() {
+  local inst_id="${1:-}"
+  local cfg="" dest="" iid=""
+
+  mkdir -p "$YEDEK_DIR"
+  _oracle_chown "$YEDEK_DIR"
+  chmod 775 "$YEDEK_DIR" 2>/dev/null || true
+
+  mkdir -p /yedek/config
+  touch /yedek/config/ftp-upload.log 2>/dev/null || true
+  _oracle_chown /yedek/config/ftp-upload.log
+
+  if [[ -n "$inst_id" ]]; then
+    cfg="/yedek/config/instances/${inst_id}.sh"
+    if [[ -f "$cfg" ]]; then
+      dest="$(grep -m1 '^directorydizini=' "$cfg" | cut -d= -f2- | tr -d "'\"")"
+      if [[ -n "$dest" ]]; then
+        mkdir -p "$dest"
+        _oracle_chown "$dest"
+        chmod 775 "$dest" 2>/dev/null || true
+      fi
+    fi
+    return 0
+  fi
+
+  if [[ -f /yedek/config/instances.list ]]; then
+    while IFS= read -r iid || [[ -n "$iid" ]]; do
+      iid="${iid//[[:space:]]/}"
+      [[ -n "$iid" ]] || continue
+      prepare_backup_dirs "$iid"
+    done < /yedek/config/instances.list
+  fi
+}
+
 write_status "running" 0
+prepare_backup_dirs "$INSTANCE_ID"
 if ! DISK_MSG="$(/yedek/config/disk-check-backup.sh "$TIP" "$INSTANCE_ID" 2>&1)"; then
   bs_finish --state skipped --exit-code 12
-  python3 - "$STATUS_FILE" "$DISK_MSG" <<'PY'
-import json, os, sys
-from datetime import datetime
-path, reason = sys.argv[1], sys.argv[2].replace("\n", " ")
-data = {}
-if os.path.isfile(path):
-    try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (OSError, json.JSONDecodeError):
-        pass
-data["reason"] = reason
-data["updated_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
-with open(path, "w", encoding="utf-8") as fh:
-    json.dump(data, fh, ensure_ascii=False)
-PY
+  bs_set_reason "$DISK_MSG" || true
   echo "=== Yedek atlandi (disk): $DISK_MSG ===" >>"$RUN_LOG"
   exit 12
 fi

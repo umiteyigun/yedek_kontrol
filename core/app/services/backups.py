@@ -7,6 +7,7 @@ from pathlib import Path
 from app.config.models import InstanceSettings, YedekSettings
 
 STAGE_ORDER = ("preflight", "exporting", "compressing", "ftp_upload", "notifying")
+STALE_RUNNING_WITHOUT_LOCK_SEC = 600
 STAGE_LABELS = {
     "preflight": "On kontrol",
     "exporting": "Yedek aliniyor",
@@ -416,6 +417,19 @@ def backup_status(yedek_dir: Path) -> dict:
             data["exit_code"] = -1
     if running_lock.exists() and data.get("state") not in {"running"}:
         data["state"] = "running"
+
+    if data.get("state") == "running" and not running_lock.exists():
+        updated = _parse_iso_ts(str(data.get("updated_at") or data.get("stage_started_at") or ""))
+        if updated:
+            age = (datetime.now(timezone.utc) - updated.astimezone(timezone.utc)).total_seconds()
+            if age > STALE_RUNNING_WITHOUT_LOCK_SEC:
+                data["state"] = "failed"
+                data["exit_code"] = int(data.get("exit_code") or -1)
+                if not data.get("reason"):
+                    data["reason"] = "Yedek islemi yarida kaldi (kilitsiz / zaman asimi)"
+        elif not data.get("stages"):
+            data["state"] = "idle"
+
     data.setdefault("instance_id", "")
     data.setdefault("reason", "")
     data.setdefault("stages", {})

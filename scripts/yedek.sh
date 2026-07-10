@@ -20,7 +20,7 @@ fi
 
 bs_stage_if_available() {
   if declare -F bs_stage >/dev/null 2>&1; then
-    bs_stage "$1" "${INSTANCE_ID:-}"
+    bs_stage "$1" "${INSTANCE_ID:-}" || true
   fi
 }
 

@@ -17,20 +17,24 @@ compose_cmd() {
 }
 
 CMD=$(compose_cmd)
+COMPOSE_ARGS=(-f docker-compose.yml)
+if [[ -f docker-compose.release.yml ]]; then
+  COMPOSE_ARGS+=(-f docker-compose.release.yml)
+fi
 
 case "${1:-start}" in
   start)
-    $CMD up -d --remove-orphans
+    $CMD "${COMPOSE_ARGS[@]}" up -d --remove-orphans
     ;;
   stop)
-    $CMD down
+    $CMD "${COMPOSE_ARGS[@]}" down
     ;;
   restart)
-    $CMD down || true
-    $CMD up -d --remove-orphans
+    $CMD "${COMPOSE_ARGS[@]}" down || true
+    $CMD "${COMPOSE_ARGS[@]}" up -d --remove-orphans
     ;;
   status)
-    $CMD ps
+    $CMD "${COMPOSE_ARGS[@]}" ps
     ;;
   *)
     echo "Kullanim: $0 {start|stop|restart|status}" >&2

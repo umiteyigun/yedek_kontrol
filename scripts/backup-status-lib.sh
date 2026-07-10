@@ -1,9 +1,30 @@
 #!/bin/bash
 # Yedek asama durumu — .backup-status.json guncelleme (root + oracle).
-BACKUP_STATUS_FILE="${BACKUP_STATUS_FILE:-/yedek/orayedek/.backup-status.json}"
+# Python 2.7 veya 3.x ile calisir (Oracle host'larda genelde sadece python vardir).
+# Default path; yedek.sh readonly tanimliyorsa yeniden atama yapma.
+if [[ -z "${BACKUP_STATUS_FILE:-}" ]]; then
+  BACKUP_STATUS_FILE="/yedek/orayedek/.backup-status.json"
+fi
+
+_bs_python() {
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s\n' python3
+    return 0
+  fi
+  if command -v python >/dev/null 2>&1; then
+    printf '%s\n' python
+    return 0
+  fi
+  echo "HATA: python/python3 bulunamadi (backup-status-lib)" >&2
+  return 1
+}
 
 bs_update() {
-  python3 - "$BACKUP_STATUS_FILE" "$@" <<'PY'
+  local py
+  py="$(_bs_python)" || return 1
+  "$py" - "$BACKUP_STATUS_FILE" "$@" <<'PY'
+from __future__ import print_function
+import io
 import json
 import os
 import sys
@@ -11,6 +32,7 @@ from datetime import datetime
 
 path, action = sys.argv[1], sys.argv[2]
 extra = sys.argv[3:]
+
 
 def parse_kv(argv):
     out = {}
@@ -29,43 +51,78 @@ def parse_kv(argv):
             i += 1
     return out
 
+
 def load():
     if not os.path.isfile(path):
         return {}
     try:
-        with open(path, encoding="utf-8") as fh:
+        with io.open(path, encoding="utf-8") as fh:
             return json.load(fh)
-    except (OSError, json.JSONDecodeError):
+    except (OSError, IOError, ValueError):
         return {}
 
-def save(data):
-    parent = os.path.dirname(path) or "."
-    os.makedirs(parent, exist_ok=True)
-    tmp = f"{path}.tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, ensure_ascii=False)
-    os.replace(tmp, path)
+
+def atomic_write(target, payload):
+    parent = os.path.dirname(target) or "."
+    if not os.path.isdir(parent):
+        try:
+            os.makedirs(parent, exist_ok=True)
+        except TypeError:
+            if not os.path.isdir(parent):
+                os.makedirs(parent)
+    tmp = target + ".tmp"
+    if sys.version_info[0] >= 3:
+        with io.open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False)
+    else:
+        with open(tmp, "wb") as fh:
+            text = json.dumps(payload, ensure_ascii=False)
+            if not isinstance(text, bytes):
+                text = text.encode("utf-8")
+            fh.write(text)
+    try:
+        os.replace(tmp, target)
+    except AttributeError:
+        if os.path.exists(target):
+            os.remove(target)
+        os.rename(tmp, target)
+
+
+def now_iso():
+    return datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z")
+
 
 def parse_ts(value):
     if not value:
         return None
-    text = str(value).replace("Z", "+00:00")
-    try:
-        return datetime.fromisoformat(text)
-    except ValueError:
-        return None
+    text = str(value).strip().replace("Z", "+00:00")
+    if hasattr(datetime, "fromisoformat"):
+        try:
+            return datetime.fromisoformat(text)
+        except ValueError:
+            pass
+    for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            chunk = text[:19]
+            return datetime.strptime(chunk, fmt)
+        except ValueError:
+            continue
+    return None
+
 
 def duration_label(sec):
     if sec is None or sec < 0:
         return ""
     sec = int(sec)
     if sec < 60:
-        return f"{sec} sn"
+        return "{0} sn".format(sec)
     minutes, seconds = divmod(sec, 60)
     if minutes < 60:
-        return f"{minutes} dk" + (f" {seconds} sn" if seconds else "")
+        tail = " {0} sn".format(seconds) if seconds else ""
+        return "{0} dk{1}".format(minutes, tail)
     hours, minutes = divmod(minutes, 60)
-    return f"{hours} sa {minutes} dk"
+    return "{0} sa {1} dk".format(hours, minutes)
+
 
 def end_stage(data, stage_name, now):
     stages = data.setdefault("stages", {})
@@ -79,6 +136,7 @@ def end_stage(data, stage_name, now):
             stage["duration_sec"] = sec
             stage["duration_label"] = duration_label(sec)
     stages[stage_name] = stage
+
 
 def start_stage(data, stage_name, now, instance_id=""):
     stages = data.setdefault("stages", {})
@@ -103,8 +161,9 @@ def start_stage(data, stage_name, now, instance_id=""):
         stages[stage_name] = existing
     data["stages"] = stages
 
+
 kwargs = parse_kv(extra)
-now = datetime.now().astimezone().isoformat(timespec="seconds")
+now = now_iso()
 data = load()
 
 if action == "init":
@@ -140,13 +199,17 @@ elif action == "finish":
     data["updated_at"] = now
     started = parse_ts(data.get("started_at"))
     if started:
-        sec = int((datetime.now().astimezone() - started).total_seconds())
+        sec = int((datetime.now() - started).total_seconds())
         data["total_duration_sec"] = sec
         data["total_duration_label"] = duration_label(sec)
+elif action == "reason":
+    reason = kwargs.get("text") or (extra[0] if extra else "")
+    data["reason"] = str(reason).replace("\n", " ")
+    data["updated_at"] = now
 else:
     sys.exit(1)
 
-save(data)
+atomic_write(path, data)
 PY
 }
 
@@ -166,6 +229,11 @@ bs_stage() {
 
 bs_finish() {
   bs_update finish "$@"
+}
+
+bs_set_reason() {
+  local reason="$1"
+  bs_update reason --text "$reason"
 }
 
 bs_ensure_writable() {
@@ -189,8 +257,12 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
       shift
       bs_finish "$@"
       ;;
+  reason)
+      shift
+      bs_set_reason "$*"
+      ;;
     *)
-      echo "Kullanim: $0 init|stage|finish ..." >&2
+      echo "Kullanim: $0 init|stage|finish|reason ..." >&2
       exit 1
       ;;
   esac

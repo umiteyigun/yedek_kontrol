@@ -159,10 +159,10 @@ prepare_config() {
 
 # --- 2b. Host paketleri ---
 install_host_packages() {
-  log "Host paketleri kontrol ediliyor (zip, git, python, openssl, ftp)..."
+  log "Host paketleri kontrol ediliyor (zip, git, python3, openssl, ftp)..."
   if command -v yum >/dev/null 2>&1; then
-    yum install -y zip unzip ftp git openssl util-linux python || \
-      yum install -y --disablerepo=updates zip unzip ftp git openssl util-linux python || \
+    yum install -y zip unzip ftp git openssl util-linux python3 python || \
+      yum install -y --disablerepo=updates zip unzip ftp git openssl util-linux python3 python || \
       log "UYARI: bazi host paketleri kurulamadi"
   elif command -v apt-get >/dev/null 2>&1; then
     apt-get update -qq && apt-get install -y zip unzip git openssl util-linux python3 || \
@@ -170,13 +170,20 @@ install_host_packages() {
   else
     log "UYARI: paket kurulumu atlandi (yum/apt yok)"
   fi
-  for need in zip git python flock openssl; do
+  for need in zip git flock openssl; do
     if command -v "$need" >/dev/null 2>&1; then
       log "$need hazir"
     else
       log "UYARI: $need bulunamadi — panel/yedek veya oto-guncelleme etkilenebilir"
     fi
   done
+  if command -v python3 >/dev/null 2>&1; then
+    log "python3 hazir"
+  elif command -v python >/dev/null 2>&1; then
+    log "python hazir (python2 — yedek asama takibi desteklenir)"
+  else
+    log "UYARI: python/python3 bulunamadi — yedek asama takibi calismaz"
+  fi
 }
 
 # --- 3. Host scriptleri ve watcher ---

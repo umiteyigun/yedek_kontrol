@@ -4,7 +4,11 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SETTINGS="${ROOT}/config/settings.json"
-TPL="${ROOT}/core/app/config/templates"
+if [[ -d "${ROOT}/config/templates" ]]; then
+  TPL="${ROOT}/config/templates"
+else
+  TPL="${ROOT}/core/app/config/templates"
+fi
 OUT="/yedek/config"
 
 [[ -f "$SETTINGS" ]] || { echo "settings.json yok: $SETTINGS" >&2; exit 1; }
