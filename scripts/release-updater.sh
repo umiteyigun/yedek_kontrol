@@ -27,24 +27,57 @@ fi
 : "${RELEASE_REGISTRY_USER:=oauth2}"
 : "${RELEASE_SKIP_PULL:=0}"
 
+resolve_target_tag_from_registry() {
+  local registry="${RELEASE_REGISTRY_HOST:-git.trtek.tr}"
+  local image="${RELEASE_CORE_IMAGE}"
+  local repo="${image#${registry}/}"
+  local token="${RELEASE_READONLY_TOKEN:-}"
+  local user="${RELEASE_REGISTRY_USER:-oauth2}"
+  local bearer="" tags_json="" max_tag=""
+
+  [[ -n "$token" && -n "$repo" ]] || return 1
+  bearer="$(curl -sk -u "${user}:${token}" \
+    "https://${registry}/v2/token?service=${registry}&scope=repository:${repo}:pull" \
+    | sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  [[ -n "$bearer" ]] || return 1
+  tags_json="$(curl -sk -H "Authorization: Bearer ${bearer}" \
+    "https://${registry}/v2/${repo}/tags/list")"
+  max_tag="$(echo "$tags_json" | python -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+tags = [int(t) for t in data.get('tags', []) if str(t).isdigit()]
+print(max(tags) if tags else '')
+" 2>/dev/null || true)"
+  [[ -n "$max_tag" ]] || return 1
+  echo "$max_tag"
+}
+
 resolve_target_tag() {
   local track="${RELEASE_TRACK:-pin}"
   local pinned="${RELEASE_TARGET_TAG:-}"
   if [[ "$track" == "latest" ]]; then
     local url="${RELEASE_MANIFEST_URL:-}"
-    local tmp manifest_tag=""
-    [[ -n "$url" ]] || { echo "$pinned"; return 0; }
-    tmp="$(mktemp /tmp/yedek-release-manifest.XXXXXX)"
-    if curl -sf --max-time 20 "$url" -o "$tmp"; then
-      manifest_tag="$(sed -n 's/^RELEASE_TARGET_TAG=\(.*\)/\1/p' "$tmp" | tr -d '[:space:]"'"'"')"
-      if [[ -n "$manifest_tag" ]]; then
-        rm -f "$tmp"
-        echo "$manifest_tag"
-        return 0
+    local tmp manifest_tag="" registry_tag=""
+    if [[ -n "$url" ]]; then
+      tmp="$(mktemp /tmp/yedek-release-manifest.XXXXXX)"
+      if curl -skf --max-time 20 "$url" -o "$tmp"; then
+        manifest_tag="$(grep -m1 '^RELEASE_TARGET_TAG=' "$tmp" | cut -d= -f2- | tr -d '[:space:]')"
+        if [[ -n "$manifest_tag" ]]; then
+          rm -f "$tmp"
+          echo "$manifest_tag"
+          return 0
+        fi
       fi
+      rm -f "$tmp"
     fi
-    rm -f "$tmp"
-    echo "[$(ts)] manifest okunamadi ($url), sabit tag kullaniliyor: ${pinned:-yok}" >&2
+    if registry_tag="$(resolve_target_tag_from_registry)"; then
+      echo "$registry_tag"
+      return 0
+    fi
+    echo "[$(ts)] latest tag cozulemedi, sabit tag kullaniliyor: ${pinned:-yok}" >&2
   fi
   echo "$pinned"
 }
