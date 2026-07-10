@@ -18,15 +18,40 @@ fi
 
 : "${RELEASE_UPDATER_ENABLED:=0}"
 : "${RELEASE_TARGET_TAG:=}"
-: "${RELEASE_CORE_IMAGE:=git.trtek.tr/umiteyigun/yedek-core}"
-: "${RELEASE_AGENT_IMAGE:=git.trtek.tr/umiteyigun/yedek-central-agent}"
+: "${RELEASE_TRACK:=pin}"
+: "${RELEASE_MANIFEST_URL:=https://git.trtek.tr/yedek_kontrol_public/-/raw/main/release/latest.env}"
+: "${RELEASE_CORE_IMAGE:=git.trtek.tr/umiteyigun/yedek_kontrol/yedek-core}"
+: "${RELEASE_AGENT_IMAGE:=git.trtek.tr/umiteyigun/yedek_kontrol/yedek-central-agent}"
 : "${RELEASE_REGISTRY_HOST:=git.trtek.tr}"
 : "${RELEASE_READONLY_TOKEN:=}"
 : "${RELEASE_REGISTRY_USER:=oauth2}"
 : "${RELEASE_SKIP_PULL:=0}"
 
+resolve_target_tag() {
+  local track="${RELEASE_TRACK:-pin}"
+  local pinned="${RELEASE_TARGET_TAG:-}"
+  if [[ "$track" == "latest" ]]; then
+    local url="${RELEASE_MANIFEST_URL:-}"
+    local tmp manifest_tag=""
+    [[ -n "$url" ]] || { echo "$pinned"; return 0; }
+    tmp="$(mktemp /tmp/yedek-release-manifest.XXXXXX)"
+    if curl -sf --max-time 20 "$url" -o "$tmp"; then
+      manifest_tag="$(sed -n 's/^RELEASE_TARGET_TAG=\(.*\)/\1/p' "$tmp" | tr -d '[:space:]"'"'"')"
+      if [[ -n "$manifest_tag" ]]; then
+        rm -f "$tmp"
+        echo "$manifest_tag"
+        return 0
+      fi
+    fi
+    rm -f "$tmp"
+    echo "[$(ts)] manifest okunamadi ($url), sabit tag kullaniliyor: ${pinned:-yok}" >&2
+  fi
+  echo "$pinned"
+}
+
 [[ "$RELEASE_UPDATER_ENABLED" == "1" ]] || exit 0
-[[ -n "$RELEASE_TARGET_TAG" ]] || exit 0
+TARGET_TAG="$(resolve_target_tag)"
+[[ -n "$TARGET_TAG" ]] || exit 0
 [[ -d "$ROOT" ]] || exit 1
 
 exec 9>"$LOCK_FILE"
@@ -136,26 +161,26 @@ if [[ -n "$RELEASE_READONLY_TOKEN" && "$RELEASE_SKIP_PULL" != "1" ]]; then
 fi
 
 PREV_TAG="$(read_current_tag)"
-if [[ "$PREV_TAG" == "$RELEASE_TARGET_TAG" ]]; then
-  write_state "ok" "Ayni release zaten calisiyor" "$PREV_TAG" "$RELEASE_TARGET_TAG"
+if [[ "$PREV_TAG" == "$TARGET_TAG" ]]; then
+  write_state "ok" "Ayni release zaten calisiyor" "$PREV_TAG" "$TARGET_TAG"
   exit 0
 fi
 
-write_state "updating" "Release gecisi basladi" "$PREV_TAG" "$RELEASE_TARGET_TAG"
-if deploy_tag "$RELEASE_TARGET_TAG" "deploy"; then
-  write_state "ok" "Release guncellendi" "$RELEASE_TARGET_TAG" "$RELEASE_TARGET_TAG"
-  echo "[$(ts)] release ok: ${RELEASE_TARGET_TAG}"
+write_state "updating" "Release gecisi basladi" "$PREV_TAG" "$TARGET_TAG"
+if deploy_tag "$TARGET_TAG" "deploy"; then
+  write_state "ok" "Release guncellendi" "$TARGET_TAG" "$TARGET_TAG"
+  echo "[$(ts)] release ok: ${TARGET_TAG}"
   exit 0
 fi
 
 if [[ -n "$PREV_TAG" ]]; then
-  write_state "rollback" "Deploy hatasi, rollback deneniyor" "$PREV_TAG" "$RELEASE_TARGET_TAG"
+  write_state "rollback" "Deploy hatasi, rollback deneniyor" "$PREV_TAG" "$TARGET_TAG"
   if deploy_tag "$PREV_TAG" "rollback"; then
-    write_state "rolled_back" "Rollback basarili" "$PREV_TAG" "$RELEASE_TARGET_TAG"
+    write_state "rolled_back" "Rollback basarili" "$PREV_TAG" "$TARGET_TAG"
     echo "[$(ts)] rollback ok: ${PREV_TAG}"
     exit 1
   fi
 fi
 
-write_state "failed" "Deploy/rollback basarisiz" "$PREV_TAG" "$RELEASE_TARGET_TAG"
+write_state "failed" "Deploy/rollback basarisiz" "$PREV_TAG" "$TARGET_TAG"
 exit 1
