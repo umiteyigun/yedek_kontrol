@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -960,9 +961,12 @@ def _command_release_update(
     script = out.splitlines()[0].strip()
 
     # Async: nohup — core recreate HTTP yaniti kesebilir
+    # tag zaten whitelist; yine de shell metachar kacisi (defense in depth)
+    qtag = shlex.quote(tag)
+    qscript = shlex.quote(script)
     start_cmd = (
-        f"nohup env RELEASE_UPDATER_ENABLED=1 RELEASE_TRACK=pin RELEASE_TARGET_TAG={tag} "
-        f"/bin/bash {script} --tag {tag} "
+        f"nohup env RELEASE_UPDATER_ENABLED=1 RELEASE_TRACK=pin RELEASE_TARGET_TAG={qtag} "
+        f"/bin/bash {qscript} --tag {qtag} "
         f">>/var/log/yedek-release-update.log 2>&1 </dev/null & echo started"
     )
     code, out, err = _run_on_host(start_cmd, timeout=20)
