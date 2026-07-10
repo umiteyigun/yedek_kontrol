@@ -1,4 +1,9 @@
-"""TRTEK FreeIPA / LDAP varsayilanlari — ad.trtekyazilim.com"""
+"""TRTEK FreeIPA / LDAP varsayilanlari — ad.trtekyazilim.com
+
+Not: Public DNS (ad.trtekyazilim.com) genelde 389/TCP disari acik degildir.
+LAN client'larda (AnkaraDIS vb.) ldap_host olarak FreeIPA ic IP kullanin:
+192.168.9.150 — hub ile ayni.
+"""
 
 from __future__ import annotations
 

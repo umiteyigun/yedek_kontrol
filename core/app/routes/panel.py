@@ -404,17 +404,20 @@ def login_submit(request: Request, username: str = Form(...), password: str = Fo
     if is_login_rate_limited(request):
         ctx = _login_template_context(request)
         return templates.TemplateResponse("login.html", ctx, status_code=429)
-    ok, auth_method, role = authenticate(request, username, password)
+    ok, auth_method, role, auth_detail = authenticate(request, username, password)
     if not ok:
         locked, remaining = get_login_lockout_status(client_ip(request))
         if locked:
             ctx = _login_template_context(request)
             return templates.TemplateResponse("login.html", ctx, status_code=429)
+        error = "Giris basarisiz. LDAP, yerel kullanici veya master hesabi gerekli."
+        if auth_detail and auth_detail not in {"Giris basarisiz", "ok"}:
+            error = f"{error} ({auth_detail})"
         return templates.TemplateResponse(
             "login.html",
             _login_template_context(
                 request,
-                error="Giris basarisiz. LDAP, yerel kullanici veya master hesabi gerekli.",
+                error=error,
             ),
             status_code=401,
         )

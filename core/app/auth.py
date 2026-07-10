@@ -11,7 +11,7 @@ from itsdangerous import BadSignature, URLSafeSerializer
 from starlette.requests import Request
 
 from app.config.ldap_config import ROLE_FULL
-from app.services.ldap_auth import ldap_login
+from app.services.ldap_auth import ldap_login_detail
 from app.services.central_proxy_auth import resolve_central_proxy_user
 from app.services.permissions import can as perm_can, get_request_permissions, has_permission
 from app.services.session_store import (
@@ -218,20 +218,21 @@ def _clear_login_failures(ip: str) -> None:
     _login_lockouts.pop(ip, None)
 
 
-def authenticate(request: Request, username: str, password: str) -> tuple[bool, str, str]:
-    """Donus: (ok, auth_method, role)."""
+def authenticate(request: Request, username: str, password: str) -> tuple[bool, str, str, str]:
+    """Donus: (ok, auth_method, role, detail)."""
     ip = client_ip(request)
     locked, _ = get_login_lockout_status(ip)
     if locked:
-        return False, "", ""
+        return False, "", "", "Cok fazla basarisiz deneme"
 
     if verify_master_login(username, password):
         _clear_login_failures(ip)
-        return True, "master", ROLE_FULL
+        return True, "master", ROLE_FULL, "ok"
 
     store = getattr(request.app.state, "store", None)
     settings = store.get() if store else None
     auth_mode = settings.auth_mode if settings else "ldap_and_local"
+    detail = ""
 
     if auth_mode in ("local", "ldap_and_local"):
         local_store = getattr(request.app.state, "local_user_store", None)
@@ -242,16 +243,16 @@ def authenticate(request: Request, username: str, password: str) -> tuple[bool, 
                 role = None
             if role:
                 _clear_login_failures(ip)
-                return True, "local", role
+                return True, "local", role, "ok"
 
     if auth_mode in ("ldap", "ldap_and_local") and settings:
-        ok, role = ldap_login(username, password, settings)
+        ok, role, detail = ldap_login_detail(username, password, settings)
         if ok and role:
             _clear_login_failures(ip)
-            return True, "ldap", role
+            return True, "ldap", role, "ok"
 
     _record_login_failure(ip)
-    return False, "", ""
+    return False, "", "", detail or "Giris basarisiz"
 
 
 def cookie_kwargs_for_request(request: Request, *, max_age: int) -> dict[str, Any]:
