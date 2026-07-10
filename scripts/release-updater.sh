@@ -28,31 +28,53 @@ fi
 : "${RELEASE_SKIP_PULL:=0}"
 
 resolve_target_tag_from_registry() {
-  local registry="${RELEASE_REGISTRY_HOST:-git.trtek.tr}"
-  local image="${RELEASE_CORE_IMAGE}"
-  local repo="${image#${registry}/}"
-  local token="${RELEASE_READONLY_TOKEN:-}"
-  local user="${RELEASE_REGISTRY_USER:-oauth2}"
-  local bearer="" tags_json="" max_tag=""
+  local py=""
+  if command -v python3 >/dev/null 2>&1; then
+    py=python3
+  elif command -v python >/dev/null 2>&1; then
+    py=python
+  else
+    return 1
+  fi
+  "$py" - "$RELEASE_REGISTRY_HOST" "$RELEASE_CORE_IMAGE" "$RELEASE_REGISTRY_USER" "$RELEASE_READONLY_TOKEN" <<'PY'
+import base64
+import json
+import os
+import ssl
+import sys
 
-  [[ -n "$token" && -n "$repo" ]] || return 1
-  bearer="$(curl -sk -u "${user}:${token}" \
-    "https://${registry}/v2/token?service=${registry}&scope=repository:${repo}:pull" \
-    | sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
-  [[ -n "$bearer" ]] || return 1
-  tags_json="$(curl -sk -H "Authorization: Bearer ${bearer}" \
-    "https://${registry}/v2/${repo}/tags/list")"
-  max_tag="$(echo "$tags_json" | python -c "
-import json, sys
 try:
-    data = json.load(sys.stdin)
-except Exception:
+    from urllib.request import Request, urlopen
+except ImportError:
+    import urllib2 as _urllib2
+    Request = _urllib2.Request
+    urlopen = _urllib2.urlopen
+
+registry, image, user, token = sys.argv[1:5]
+if not registry or not image or not token:
     sys.exit(1)
-tags = [int(t) for t in data.get('tags', []) if str(t).isdigit()]
-print(max(tags) if tags else '')
-" 2>/dev/null || true)"
-  [[ -n "$max_tag" ]] || return 1
-  echo "$max_tag"
+repo = image.split(registry + "/", 1)[-1] if registry + "/" in image else image
+ctx = ssl.create_default_context()
+ctx.check_hostname = False
+ctx.verify_mode = ssl.CERT_NONE
+
+def fetch(url, headers):
+    req = Request(url, headers=headers)
+    return urlopen(req, context=ctx).read()
+
+auth = base64.b64encode((user + ":" + token).encode("utf-8")).decode("ascii")
+token_url = "https://%s/v2/token?service=%s&scope=repository:%s:pull" % (registry, registry, repo)
+token_payload = json.loads(fetch(token_url, {"Authorization": "Basic " + auth}))
+bearer = token_payload.get("token") or ""
+if not bearer:
+    sys.exit(1)
+tags_url = "https://%s/v2/%s/tags/list" % (registry, repo)
+tags_payload = json.loads(fetch(tags_url, {"Authorization": "Bearer " + bearer}))
+tags = [int(t) for t in tags_payload.get("tags", []) if str(t).isdigit()]
+if not tags:
+    sys.exit(1)
+print(max(tags))
+PY
 }
 
 resolve_target_tag() {
