@@ -89,6 +89,7 @@ class RetentionService:
                 or name.endswith(".dmp")
                 or name.endswith(".zip")
                 or ".part_" in name
+                or "-part-" in name
             ):
                 keep_days = self._retention_for_backup_file(settings, name)
                 if age_days > keep_days:

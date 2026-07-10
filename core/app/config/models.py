@@ -344,8 +344,12 @@ class InstanceSettings(BaseModel):
 
     def backup_base_name(self, filename: str) -> str:
         name = filename
+        # Yeni split: dosya.dmp.gz.part_001
         if ".part_" in name:
             name = re.sub(r"\.part_\d+$", "", name)
+        # Eski yedek.sh split: dosya.dmp.gz-part-aa
+        if "-part-" in name:
+            name = re.sub(r"-part-[A-Za-z0-9]+$", "", name)
         for suffix in (".dmp.gz", ".dmp", ".zip"):
             if name.endswith(suffix):
                 return name[: -len(suffix)]
@@ -357,6 +361,7 @@ class InstanceSettings(BaseModel):
             or filename.endswith(".dmp")
             or filename.endswith(".zip")
             or ".part_" in filename
+            or "-part-" in filename
         ):
             return False
         base = self.backup_base_name(filename)

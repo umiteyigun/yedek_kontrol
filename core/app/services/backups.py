@@ -337,6 +337,7 @@ def delete_backup(settings: YedekSettings, instance: InstanceSettings, archive_n
         or archive_name.endswith(".dmp")
         or archive_name.endswith(".zip")
         or ".part_" in archive_name
+        or "-part-" in archive_name
         or "(+" in archive_name
     ):
         raise ValueError("Gecersiz yedek dosya adi")
