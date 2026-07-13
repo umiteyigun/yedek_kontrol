@@ -96,13 +96,22 @@ registry, image, user, token = sys.argv[1:5]
 if not registry or not image or not token:
     sys.exit(1)
 repo = image.split(registry + "/", 1)[-1] if registry + "/" in image else image
-ctx = ssl.create_default_context()
-ctx.check_hostname = False
-ctx.verify_mode = ssl.CERT_NONE
+
+# Python 2.6 / 2.7.5 (RHEL7): ssl.create_default_context ve urlopen(context=) yok.
+ctx = None
+if hasattr(ssl, "create_default_context"):
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
 
 def fetch(url, headers):
     req = Request(url, headers=headers)
-    return urlopen(req, context=ctx).read()
+    if ctx is not None:
+        try:
+            return urlopen(req, context=ctx).read()
+        except TypeError:
+            pass
+    return urlopen(req).read()
 
 auth = base64.b64encode((user + ":" + token).encode("utf-8")).decode("ascii")
 token_url = "https://%s/v2/token?service=%s&scope=repository:%s:pull" % (registry, registry, repo)
