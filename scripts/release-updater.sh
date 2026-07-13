@@ -254,6 +254,20 @@ fi
 write_state "updating" "Release gecisi basladi" "$PREV_TAG" "$TARGET_TAG"
 if deploy_tag "$TARGET_TAG" "deploy"; then
   write_state "ok" "Release guncellendi" "$TARGET_TAG" "$TARGET_TAG"
+  # Hub/manuel --tag sonrasi pin kilidini kaldir; sonraki cron latest takip etsin
+  if [[ -n "$FORCE_TAG" && "${RELEASE_UNLOCK_LATEST:-1}" == "1" && -f "$ENV_FILE" ]]; then
+    if grep -q "^RELEASE_TRACK=" "$ENV_FILE" 2>/dev/null; then
+      sed -i "s/^RELEASE_TRACK=.*/RELEASE_TRACK=latest/" "$ENV_FILE"
+    else
+      echo "RELEASE_TRACK=latest" >>"$ENV_FILE"
+    fi
+    if grep -q "^RELEASE_TARGET_TAG=" "$ENV_FILE" 2>/dev/null; then
+      sed -i "s/^RELEASE_TARGET_TAG=.*/RELEASE_TARGET_TAG=${TARGET_TAG}/" "$ENV_FILE"
+    else
+      echo "RELEASE_TARGET_TAG=${TARGET_TAG}" >>"$ENV_FILE"
+    fi
+    echo "[$(ts)] unlock: RELEASE_TRACK=latest (fallback pin=${TARGET_TAG})"
+  fi
   echo "[$(ts)] release ok: ${TARGET_TAG}"
   exit 0
 fi

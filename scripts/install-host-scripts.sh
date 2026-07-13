@@ -70,4 +70,11 @@ ln -sfn /yedek/config/yedekconfig.sh /usr/bin/yedekconfig2.sh 2>/dev/null || tru
 
 install -m 755 "$ROOT/scripts/install-host-scripts.sh" /yedek/config/install-host-scripts.sh
 
+# release-updater hostta kalici kopya (image deploy sonrasi da guncellenir)
+mkdir -p /opt/yedek_kontrol/scripts
+if [[ -f "$ROOT/scripts/release-updater.sh" ]]; then
+  install -m 755 "$ROOT/scripts/release-updater.sh" /opt/yedek_kontrol/scripts/release-updater.sh
+  install -m 755 "$ROOT/scripts/release-updater.sh" /yedek/config/release-updater.sh
+fi
+
 log "kuruldu ($(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo local))"

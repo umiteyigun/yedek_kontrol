@@ -940,45 +940,74 @@ def _command_release_update(
     inst: InstanceSettings,
     params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Image release guncelle — fire-and-forget (core recreate HTTP'yi keser)."""
+    """Image release guncelle - fire-and-forget (core recreate HTTP'yi keser).
+
+    Hub WebSocket/proxy -> /api/v1/hub/commands/run (release_update).
+    Kitli/eski host updater icin once hedef image'dan release-updater.sh bootstrap edilir.
+    """
     params = params or {}
     tag = str(params.get("tag") or "").strip()
     if not tag or not RELEASE_TAG_RE.fullmatch(tag):
         raise ValueError("Gecersiz release tag")
 
-    script_candidates = (
-        "/opt/yedek_kontrol/scripts/release-updater.sh",
-        "/yedek/config/release-updater.sh",
-    )
-    code, out, err = _run_on_host(
-        "for s in "
-        + " ".join(script_candidates)
-        + '; do [[ -x "$s" ]] && echo "$s" && exit 0; done; exit 1',
-        timeout=10,
-    )
-    if code != 0 or not out:
-        raise ValueError("release-updater.sh bulunamadi (host)")
-    script = out.splitlines()[0].strip()
-
-    # Async: nohup — core recreate HTTP yaniti kesebilir
-    # tag zaten whitelist; yine de shell metachar kacisi (defense in depth)
     qtag = shlex.quote(tag)
-    qscript = shlex.quote(script)
+    # Background job: pull -> bootstrap updater -> unlock track -> deploy
+    inner = f"""
+set -euo pipefail
+ENVF=/yedek/config/release-update.env
+CORE_IMG=git.trtek.tr/umiteyigun/yedek_kontrol/yedek-core
+REG_HOST=git.trtek.tr
+REG_USER=oauth2
+REG_TOKEN=
+if [[ -f "$ENVF" ]]; then
+  set +u
+  # shellcheck source=/dev/null
+  . "$ENVF"
+  set -u
+  CORE_IMG="${{RELEASE_CORE_IMAGE:-$CORE_IMG}}"
+  REG_HOST="${{RELEASE_REGISTRY_HOST:-$REG_HOST}}"
+  REG_USER="${{RELEASE_REGISTRY_USER:-$REG_USER}}"
+  REG_TOKEN="${{RELEASE_READONLY_TOKEN:-}}"
+fi
+exec >>/var/log/yedek-release-update.log 2>&1
+echo "[$(date '+%F %T')] hub release_update bootstrap tag={tag}"
+if [[ -n "$REG_TOKEN" ]]; then
+  echo "$REG_TOKEN" | docker login "$REG_HOST" -u "$REG_USER" --password-stdin >/dev/null 2>&1 || true
+fi
+docker pull "$CORE_IMG:{tag}" >/dev/null
+cid="$(docker create "$CORE_IMG:{tag}")"
+tmpdir="$(mktemp -d /tmp/yedek-relboot.XXXXXX)"
+docker cp "$cid:/opt/host-scripts/scripts/release-updater.sh" "$tmpdir/release-updater.sh"
+docker rm -f "$cid" >/dev/null
+mkdir -p /opt/yedek_kontrol/scripts /yedek/config
+install -m 755 "$tmpdir/release-updater.sh" /opt/yedek_kontrol/scripts/release-updater.sh
+install -m 755 "$tmpdir/release-updater.sh" /yedek/config/release-updater.sh
+rm -rf "$tmpdir"
+if [[ -f "$ENVF" ]]; then
+  if grep -q "^RELEASE_TRACK=" "$ENVF" 2>/dev/null; then
+    sed -i "s/^RELEASE_TRACK=.*/RELEASE_TRACK=latest/" "$ENVF"
+  else
+    echo "RELEASE_TRACK=latest" >>"$ENVF"
+  fi
+fi
+export RELEASE_UPDATER_ENABLED=1 RELEASE_TRACK=pin RELEASE_TARGET_TAG={tag} RELEASE_UNLOCK_LATEST=1
+/bin/bash /opt/yedek_kontrol/scripts/release-updater.sh --tag {tag}
+"""
     start_cmd = (
-        f"nohup env RELEASE_UPDATER_ENABLED=1 RELEASE_TRACK=pin RELEASE_TARGET_TAG={qtag} "
-        f"/bin/bash {qscript} --tag {qtag} "
-        f">>/var/log/yedek-release-update.log 2>&1 </dev/null & echo started"
+        "nohup /bin/bash -lc "
+        + shlex.quote(inner)
+        + " >/dev/null 2>&1 & echo started"
     )
-    code, out, err = _run_on_host(start_cmd, timeout=20)
+    code, out, err = _run_on_host(start_cmd, timeout=30)
     if code != 0 and "started" not in out:
         raise ValueError(err or out or f"release baslatilamadi (exit {code})")
 
     return {
         "started": True,
         "target_tag": tag,
-        "script": script,
+        "script": "/opt/yedek_kontrol/scripts/release-updater.sh",
         "hostname": settings.hostname,
-        "message": f"Release guncelleme baslatildi (tag={tag})",
+        "message": f"Release guncelleme baslatildi (tag={tag}, bootstrap+unlock)",
         "detail": out or err,
     }
 
