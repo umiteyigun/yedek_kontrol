@@ -1,6 +1,6 @@
 #!/bin/bash
 # Yedek asama durumu — .backup-status.json guncelleme (root + oracle).
-# Python 2.7 veya 3.x ile calisir (Oracle host'larda genelde sadece python vardir).
+# Python 2.6+ / 3.x ile calisir (Oracle host'larda default siklikla 2.6; total_seconds 2.7+).
 # Default path; yedek.sh readonly tanimliyorsa yeniden atama yapma.
 if [[ -z "${BACKUP_STATUS_FILE:-}" ]]; then
   BACKUP_STATUS_FILE="/yedek/orayedek/.backup-status.json"
@@ -110,6 +110,14 @@ def parse_ts(value):
     return None
 
 
+def timedelta_total_seconds(td):
+    """Python 2.6+ (datetime.timedelta.total_seconds is 2.7+)."""
+    try:
+        return td.total_seconds()
+    except AttributeError:
+        return (td.days * 86400) + td.seconds + (td.microseconds / 1.0e6)
+
+
 def duration_label(sec):
     if sec is None or sec < 0:
         return ""
@@ -132,7 +140,7 @@ def end_stage(data, stage_name, now):
         start = parse_ts(stage.get("started_at"))
         end = parse_ts(now)
         if start and end:
-            sec = int((end - start).total_seconds())
+            sec = int(timedelta_total_seconds(end - start))
             stage["duration_sec"] = sec
             stage["duration_label"] = duration_label(sec)
     stages[stage_name] = stage
@@ -199,7 +207,7 @@ elif action == "finish":
     data["updated_at"] = now
     started = parse_ts(data.get("started_at"))
     if started:
-        sec = int((datetime.now() - started).total_seconds())
+        sec = int(timedelta_total_seconds(datetime.now() - started))
         data["total_duration_sec"] = sec
         data["total_duration_label"] = duration_label(sec)
 elif action == "reason":
