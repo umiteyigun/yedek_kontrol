@@ -47,6 +47,23 @@ for _cmd in passwd chpasswd chage vipw vigr htpasswd; do
   ln -sfn /yedek/config/terminal-bin/yedek-terminal-blocked "/yedek/config/terminal-bin/${_cmd}"
 done
 install -m 755 "$ROOT/scripts/install-panel-ssl.sh" /yedek/config/install-panel-ssl.sh
+install -m 755 "$ROOT/scripts/ensure-panel-ssl-access.sh" /yedek/config/ensure-panel-ssl-access.sh
+
+# nginx ExecStartPre drop-in (systemd)
+if command -v systemctl >/dev/null 2>&1 && [[ -d /etc/systemd/system || -d /usr/lib/systemd/system ]]; then
+  mkdir -p /etc/systemd/system/nginx.service.d
+  if [[ -f "$ROOT/scripts/nginx-yedek-ssl.service.d.conf" ]]; then
+    install -m 644 "$ROOT/scripts/nginx-yedek-ssl.service.d.conf" /etc/systemd/system/nginx.service.d/90-yedek-ssl.conf
+  else
+    cat >/etc/systemd/system/nginx.service.d/90-yedek-ssl.conf <<'UNIT'
+[Service]
+ExecStartPre=/yedek/config/ensure-panel-ssl-access.sh
+UNIT
+  fi
+  systemctl daemon-reload 2>/dev/null || true
+fi
+# hemen bir kez uygula (reboot beklemeden)
+bash /yedek/config/ensure-panel-ssl-access.sh 2>/dev/null || true
 
 ln -sfn /yedek/config/yedekconfig.sh /usr/bin/yedekconfig.sh 2>/dev/null || true
 ln -sfn /yedek/config/yedekconfig.sh /usr/bin/yedekconfig2.sh 2>/dev/null || true

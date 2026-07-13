@@ -22,7 +22,8 @@ if ! command -v nginx >/dev/null 2>&1; then
 fi
 
 mkdir -p "$SSL_DIR"
-chmod 700 "$SSL_DIR"
+# nginx kullanicisi traverse edebilmeli (700 = ConnectError / panel down)
+chmod 755 "$SSL_DIR"
 
 if [[ ! -f "$CERT" || ! -f "$KEY" ]]; then
   log "Self-signed sertifika uretiliyor: $CERT"
@@ -41,8 +42,18 @@ if [[ ! -f "$CERT" || ! -f "$KEY" ]]; then
       -keyout "$KEY" \
       -out "$CERT" \
       -subj "/CN=${host_cn}/O=TRTEK Yedek Panel/C=TR"
-  chmod 600 "$KEY"
+  chmod 640 "$KEY"
   chmod 644 "$CERT"
+  if getent group nginx >/dev/null 2>&1; then
+    chown root:nginx "$KEY" "$CERT" || true
+  fi
+fi
+
+# nginx start oncesi kalici izin/SELinux
+if [[ -x "$ROOT/scripts/ensure-panel-ssl-access.sh" ]]; then
+  bash "$ROOT/scripts/ensure-panel-ssl-access.sh" || true
+elif [[ -x /yedek/config/ensure-panel-ssl-access.sh ]]; then
+  bash /yedek/config/ensure-panel-ssl-access.sh || true
 fi
 
 install -m 644 "$ROOT/nginx/yedek-panel.conf" "$NGINX_CONF"

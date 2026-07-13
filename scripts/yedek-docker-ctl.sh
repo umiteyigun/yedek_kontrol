@@ -24,12 +24,14 @@ fi
 
 case "${1:-start}" in
   start)
+    bash /yedek/config/ensure-panel-ssl-access.sh 2>/dev/null || true
     $CMD "${COMPOSE_ARGS[@]}" up -d --remove-orphans
     ;;
   stop)
     $CMD "${COMPOSE_ARGS[@]}" down
     ;;
   restart)
+    bash /yedek/config/ensure-panel-ssl-access.sh 2>/dev/null || true
     $CMD "${COMPOSE_ARGS[@]}" down || true
     $CMD "${COMPOSE_ARGS[@]}" up -d --remove-orphans
     ;;
