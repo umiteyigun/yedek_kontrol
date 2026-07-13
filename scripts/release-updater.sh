@@ -34,6 +34,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Hub env ile gelen tag, source sonrasi kaybolmasin
+_ENV_TARGET_TAG="${RELEASE_TARGET_TAG:-}"
+_ENV_TRACK="${RELEASE_TRACK:-}"
+
 if [[ -f "$ENV_FILE" ]]; then
   # shellcheck source=/dev/null
   source "$ENV_FILE"
@@ -42,6 +46,14 @@ fi
 : "${RELEASE_UPDATER_ENABLED:=0}"
 : "${RELEASE_TARGET_TAG:=}"
 : "${RELEASE_TRACK:=pin}"
+
+# Dosyadaki pin, hub/env ile gelen degeri ezmesin
+if [[ -z "$FORCE_TAG" && -n "$_ENV_TARGET_TAG" ]]; then
+  RELEASE_TARGET_TAG="$_ENV_TARGET_TAG"
+fi
+if [[ -z "$FORCE_TAG" && -n "$_ENV_TRACK" ]]; then
+  RELEASE_TRACK="$_ENV_TRACK"
+fi
 : "${RELEASE_MANIFEST_URL:=https://git.trtek.tr/yedek_kontrol_public/-/raw/main/release/latest.env}"
 : "${RELEASE_CORE_IMAGE:=git.trtek.tr/umiteyigun/yedek_kontrol/yedek-core}"
 : "${RELEASE_AGENT_IMAGE:=git.trtek.tr/umiteyigun/yedek_kontrol/yedek-central-agent}"
@@ -140,8 +152,16 @@ TARGET_TAG="$(resolve_target_tag)"
 [[ -d "$ROOT" ]] || exit 1
 
 exec 9>"$LOCK_FILE"
-if ! flock -n 9; then
-  exit 0
+if [[ -n "$FORCE_TAG" ]]; then
+  # Hub/manuel: kilitli cron bitsin diye bekle
+  if ! flock -w 600 9; then
+    echo "[$(ts)] release-updater: lock timeout (FORCE_TAG=$FORCE_TAG)" >&2
+    exit 1
+  fi
+else
+  if ! flock -n 9; then
+    exit 0
+  fi
 fi
 
 compose() {
