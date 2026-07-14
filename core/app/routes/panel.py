@@ -127,7 +127,9 @@ def _parse_instance_form(
         "schemas": field("schemas", inst.schemas),
         "kurumkodu": field("kurumkodu", inst.kurumkodu),
         "directory": ORACLE_DIRECTORY_NAME,
-        "directorydizini": inst.effective_directorydizini(yedek_dir),
+        # Coklu instance: kayitli directorydizini korunur (effective_* fallback global yedek_dir)
+        "directorydizini": (inst.directorydizini or "").strip()
+        or inst.effective_directorydizini(yedek_dir),
         "oracle_sid": inst.oracle_sid,
         "yedek_kodu": field("yedek_kodu", inst.yedek_kodu),
         "guid_key": field("guid_key", inst.guid_key),

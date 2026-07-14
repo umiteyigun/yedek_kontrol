@@ -65,9 +65,9 @@ _TURKISH_TO_ASCII = str.maketrans(
 
 
 def normalize_upper_ascii(value: str) -> str:
-    """Gorunen ad / il: Turkce harfleri ASCII'ye cevir, buyuk harf, yalnizca A-Z ve bosluk."""
+    """Gorunen ad / il: Turkce harfleri ASCII'ye cevir, buyuk harf; A-Z, rakam ve bosluk."""
     text = (value or "").strip().translate(_TURKISH_TO_ASCII).upper()
-    text = re.sub(r"[^A-Z ]+", "", text)
+    text = re.sub(r"[^A-Z0-9 ]+", "", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -308,7 +308,14 @@ class InstanceSettings(BaseModel):
         return self.id.upper().replace("-", "")
 
     def effective_directorydizini(self, yedek_dir: str) -> str:
-        """Tum kurumlar tek dizinde: /yedek/orayedek/"""
+        """Instance dizini varsa onu kullan; yoksa global yedek_dir."""
+        custom = (self.directorydizini or "").strip().replace("\\", "/")
+        if custom:
+            if not custom.startswith("/"):
+                custom = f"/{custom}"
+            if not custom.endswith("/"):
+                custom = f"{custom}/"
+            return custom
         return f"{yedek_dir.rstrip('/')}/"
 
     def effective_rman_dest(self) -> str:
