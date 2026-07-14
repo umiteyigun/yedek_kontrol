@@ -138,7 +138,8 @@ resolve_target_tag() {
       tmp="$(mktemp /tmp/yedek-release-manifest.XXXXXX)"
       if curl -skf --max-time 20 "$url" -o "$tmp"; then
         manifest_tag="$(grep -m1 '^RELEASE_TARGET_TAG=' "$tmp" | cut -d= -f2- | tr -d '[:space:]')"
-        if [[ -n "$manifest_tag" ]]; then
+        # OneDev login HTML vb. sahte cevaplari ele
+        if [[ -n "$manifest_tag" && "$manifest_tag" =~ ^[0-9A-Za-z._-]+$ ]]; then
           rm -f "$tmp"
           echo "$manifest_tag"
           return 0
@@ -153,6 +154,43 @@ resolve_target_tag() {
     echo "[$(ts)] latest tag cozulemedi, sabit tag kullaniliyor: ${pinned:-yok}" >&2
   fi
   echo "$pinned"
+}
+
+is_numeric_tag() {
+  [[ "${1:-}" =~ ^[0-9]+$ ]]
+}
+
+# a > b (ikisi de numeric); degilse 1
+tag_gt() {
+  local a="${1:-}" b="${2:-}"
+  is_numeric_tag "$a" && is_numeric_tag "$b" || return 1
+  (( 10#$a > 10#$b ))
+}
+
+# Fallback pin = latest cozulemezse tutunacagimiz tag. Calisan/hedef ile hizala.
+sync_fallback_pin() {
+  local tag="${1:-}"
+  [[ -n "$tag" && -f "$ENV_FILE" ]] || return 0
+  local current
+  current="$(grep -m1 '^RELEASE_TARGET_TAG=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')"
+  if [[ "$current" == "$tag" ]]; then
+    return 0
+  fi
+  if grep -q '^RELEASE_TARGET_TAG=' "$ENV_FILE" 2>/dev/null; then
+    sed -i "s/^RELEASE_TARGET_TAG=.*/RELEASE_TARGET_TAG=${tag}/" "$ENV_FILE"
+  else
+    echo "RELEASE_TARGET_TAG=${tag}" >>"$ENV_FILE"
+  fi
+  echo "[$(ts)] fallback pin guncellendi: ${current:-yok} -> ${tag}"
+}
+
+unlock_track_latest() {
+  [[ -f "$ENV_FILE" ]] || return 0
+  if grep -q '^RELEASE_TRACK=' "$ENV_FILE" 2>/dev/null; then
+    sed -i 's/^RELEASE_TRACK=.*/RELEASE_TRACK=latest/' "$ENV_FILE"
+  else
+    echo 'RELEASE_TRACK=latest' >>"$ENV_FILE"
+  fi
 }
 
 [[ "$RELEASE_UPDATER_ENABLED" == "1" ]] || exit 0
@@ -418,7 +456,15 @@ if [[ -z "$PREV_TAG" && -n "$RUNNING_TAG" ]]; then
   PREV_TAG="$RUNNING_TAG"
 fi
 
+# Latest cozulemeyip eski pin'e dustuyse: calisan daha yeni image varsa downgrade etme
+if [[ -z "$FORCE_TAG" && -n "$RUNNING_TAG" ]] && tag_gt "$RUNNING_TAG" "$TARGET_TAG"; then
+  echo "[$(ts)] anti-downgrade: target=${TARGET_TAG} < running=${RUNNING_TAG}; running kullaniliyor"
+  TARGET_TAG="$RUNNING_TAG"
+fi
+
 if [[ "$PREV_TAG" == "$TARGET_TAG" ]]; then
+  # Sorun yok gorunse bile fallback pin'i calisan tag ile hizala (oto heal)
+  sync_fallback_pin "$TARGET_TAG"
   if needs_compose_recreate; then
     recreate_current_tag "$TARGET_TAG" || exit 1
     exit 0
@@ -430,18 +476,11 @@ fi
 write_state "updating" "Release gecisi basladi" "$PREV_TAG" "$TARGET_TAG"
 if deploy_tag "$TARGET_TAG" "deploy"; then
   write_state "ok" "Release guncellendi" "$TARGET_TAG" "$TARGET_TAG"
-  # Hub/manuel --tag sonrasi pin kilidini kaldir; sonraki cron latest takip etsin
-  if [[ -n "$FORCE_TAG" && "${RELEASE_UNLOCK_LATEST:-1}" == "1" && -f "$ENV_FILE" ]]; then
-    if grep -q "^RELEASE_TRACK=" "$ENV_FILE" 2>/dev/null; then
-      sed -i "s/^RELEASE_TRACK=.*/RELEASE_TRACK=latest/" "$ENV_FILE"
-    else
-      echo "RELEASE_TRACK=latest" >>"$ENV_FILE"
-    fi
-    if grep -q "^RELEASE_TARGET_TAG=" "$ENV_FILE" 2>/dev/null; then
-      sed -i "s/^RELEASE_TARGET_TAG=.*/RELEASE_TARGET_TAG=${TARGET_TAG}/" "$ENV_FILE"
-    else
-      echo "RELEASE_TARGET_TAG=${TARGET_TAG}" >>"$ENV_FILE"
-    fi
+  # Basarili deploy sonrasi fallback pin her zaman yeni tag (FORCE sart degil)
+  sync_fallback_pin "$TARGET_TAG"
+  # Hub/manuel --tag sonrasi latest track'e geri ac
+  if [[ -n "$FORCE_TAG" && "${RELEASE_UNLOCK_LATEST:-1}" == "1" ]]; then
+    unlock_track_latest
     echo "[$(ts)] unlock: RELEASE_TRACK=latest (fallback pin=${TARGET_TAG})"
   fi
   echo "[$(ts)] release ok: ${TARGET_TAG}"
@@ -452,6 +491,8 @@ if [[ -n "$PREV_TAG" ]]; then
   write_state "rollback" "Deploy hatasi, rollback deneniyor" "$PREV_TAG" "$TARGET_TAG"
   if deploy_tag "$PREV_TAG" "rollback"; then
     write_state "rolled_back" "Rollback basarili" "$PREV_TAG" "$TARGET_TAG"
+    # Rollback sonrasi pin eski calisan tag'de kalsin; yeni broken tag'e kitlenme
+    sync_fallback_pin "$PREV_TAG"
     echo "[$(ts)] rollback ok: ${PREV_TAG}"
     exit 1
   fi
