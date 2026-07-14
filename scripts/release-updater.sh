@@ -192,6 +192,124 @@ compose_files() {
   printf '%s\n' "${files[@]}"
 }
 
+COMPOSE_FP_FILE="/yedek/config/compose-applied.fp"
+COMPOSE_RECREATE_FLAG="/yedek/config/compose-recreate.requested"
+
+ensure_compose_base() {
+  local base="$ROOT/docker-compose.yml"
+  [[ -f "$base" ]] || return 0
+  if grep -q '/yedek/orayedek:/yedek/orayedek' "$base" && ! grep -qE '/yedek:/yedek[^/]' "$base"; then
+    sed -i 's|/yedek/orayedek:/yedek/orayedek|/yedek:/yedek|g' "$base"
+    echo "[$(ts)] docker-compose.yml: /yedek tam mount'a guncellendi"
+    return 0
+  fi
+  return 0
+}
+
+compose_fingerprint() {
+  local tmp="" fp=""
+  cd "$ROOT"
+  mapfile -t _cf < <(compose_files)
+  tmp="$(mktemp /tmp/yedek-compose-fp.XXXXXX)"
+  if compose "${_cf[@]}" config >"$tmp" 2>/dev/null; then
+    if command -v sha256sum >/dev/null 2>&1; then
+      fp="$(sha256sum "$tmp" | awk '{print $1}')"
+    else
+      fp="$(shasum -a 256 "$tmp" | awk '{print $1}')"
+    fi
+  fi
+  rm -f "$tmp"
+  if [[ -f /yedek/config/backup-dirs.fp ]]; then
+    local dirs_fp
+    dirs_fp="$(tr -d '[:space:]' </yedek/config/backup-dirs.fp)"
+    fp="${fp:-none}:${dirs_fp}"
+  fi
+  echo "${fp:-unknown}"
+}
+
+read_applied_compose_fp() {
+  if [[ -f "$COMPOSE_FP_FILE" ]]; then
+    tr -d '[:space:]' <"$COMPOSE_FP_FILE"
+  fi
+}
+
+write_applied_compose_fp() {
+  local fp="$1"
+  printf '%s\n' "$fp" >"${COMPOSE_FP_FILE}.tmp"
+  mv -f "${COMPOSE_FP_FILE}.tmp" "$COMPOSE_FP_FILE"
+}
+
+container_mounts_ok() {
+  if ! docker inspect yedek-core >/dev/null 2>&1; then
+    return 1
+  fi
+  if docker inspect yedek-core --format '{{range .Mounts}}{{println .Destination}}{{end}}' \
+    | grep -qx '/yedek'; then
+    return 0
+  fi
+  if [[ -f /yedek/config/backup-dirs.json ]]; then
+    local py="" missing=0
+    if command -v python3 >/dev/null 2>&1; then py=python3
+    elif command -v python >/dev/null 2>&1; then py=python
+    else return 1
+    fi
+    missing="$("$py" - <<'PY'
+import json, subprocess, sys
+try:
+    data = json.load(open("/yedek/config/backup-dirs.json"))
+except (IOError, ValueError):
+    sys.exit(1)
+dests = set(subprocess.check_output(
+    ["docker", "inspect", "yedek-core", "--format", "{{range .Mounts}}{{println .Destination}}{{end}}"],
+).decode().split())
+dirs = data.get("unique_dirs") or []
+for raw in dirs:
+    path = str(raw).rstrip("/") or "/yedek"
+    if path not in dests and not any(d == "/yedek" for d in dests):
+        sys.exit(2)
+sys.exit(0)
+PY
+)"
+    [[ "$missing" -eq 0 ]]
+    return
+  fi
+  docker inspect yedek-core --format '{{range .Mounts}}{{println .Destination}}{{end}}' \
+    | grep -qx '/yedek/orayedek'
+}
+
+needs_compose_recreate() {
+  local desired applied
+  desired="$(compose_fingerprint)"
+  applied="$(read_applied_compose_fp)"
+  if [[ -f "$COMPOSE_RECREATE_FLAG" ]]; then
+    echo "[$(ts)] compose-recreate.requested bayragi aktif"
+    return 0
+  fi
+  if [[ -n "$applied" && "$applied" != "$desired" ]]; then
+    echo "[$(ts)] compose fingerprint degisti (applied=${applied:0:12}.. desired=${desired:0:12}..)"
+    return 0
+  fi
+  if ! container_mounts_ok; then
+    echo "[$(ts)] yedek-core mount'lari beklenen yedek dizinlerini kapsamiyor"
+    return 0
+  fi
+  return 1
+}
+
+recreate_current_tag() {
+  local tag="$1"
+  write_state "updating" "Compose/mount degisikligi — container yeniden olusturuluyor" "$tag" "$tag"
+  if deploy_tag "$tag" "recreate"; then
+    write_applied_compose_fp "$(compose_fingerprint)"
+    rm -f "$COMPOSE_RECREATE_FLAG"
+    write_state "ok" "Compose recreate tamamlandi (tag=${tag})" "$tag" "$tag"
+    echo "[$(ts)] compose recreate ok: tag=${tag}"
+    return 0
+  fi
+  write_state "failed" "Compose recreate basarisiz (tag=${tag})" "$tag" "$tag"
+  return 1
+}
+
 write_state() {
   local status="$1"
   local message="$2"
@@ -279,6 +397,9 @@ EOF
     return 1
   fi
 
+  write_applied_compose_fp "$(compose_fingerprint)"
+  rm -f "$COMPOSE_RECREATE_FLAG"
+
   return 0
 }
 
@@ -286,8 +407,22 @@ if [[ -n "$RELEASE_READONLY_TOKEN" && "$RELEASE_SKIP_PULL" != "1" ]]; then
   echo "$RELEASE_READONLY_TOKEN" | docker login "$RELEASE_REGISTRY_HOST" -u "$RELEASE_REGISTRY_USER" --password-stdin >/dev/null 2>&1 || true
 fi
 
+ensure_compose_base
+
 PREV_TAG="$(read_current_tag)"
+RUNNING_TAG=""
+if docker inspect yedek-core >/dev/null 2>&1; then
+  RUNNING_TAG="$(docker inspect yedek-core --format '{{.Config.Image}}' | awk -F: '{print $NF}')"
+fi
+if [[ -z "$PREV_TAG" && -n "$RUNNING_TAG" ]]; then
+  PREV_TAG="$RUNNING_TAG"
+fi
+
 if [[ "$PREV_TAG" == "$TARGET_TAG" ]]; then
+  if needs_compose_recreate; then
+    recreate_current_tag "$TARGET_TAG" || exit 1
+    exit 0
+  fi
   write_state "ok" "Ayni release zaten calisiyor" "$PREV_TAG" "$TARGET_TAG"
   exit 0
 fi

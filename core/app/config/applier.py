@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import shlex
@@ -237,15 +238,34 @@ class ConfigApplier:
 
         volumes_override = _render_docker_volumes_override(settings)
         volumes_path = self.host_output_dir / "docker-compose.volumes.yml"
+        volumes_changed = False
         if volumes_override:
+            if not volumes_path.exists() or volumes_path.read_text(encoding="utf-8") != volumes_override:
+                volumes_changed = True
             volumes_path.write_text(volumes_override, encoding="utf-8")
             written.append(str(volumes_path))
             (self.generated_dir / "docker-compose.volumes.yml").write_text(
                 volumes_override, encoding="utf-8"
             )
-        else:
+        elif volumes_path.exists():
+            volumes_changed = True
             volumes_path.unlink(missing_ok=True)
             (self.generated_dir / "docker-compose.volumes.yml").unlink(missing_ok=True)
+
+        dirs_fp = hashlib.sha256(
+            json.dumps(backup_dirs_json, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        dirs_fp_path = self.host_output_dir / "backup-dirs.fp"
+        prev_dirs_fp = dirs_fp_path.read_text(encoding="utf-8").strip() if dirs_fp_path.exists() else ""
+        dirs_fp_path.write_text(dirs_fp + "\n", encoding="utf-8")
+        (self.generated_dir / "backup-dirs.fp").write_text(dirs_fp + "\n", encoding="utf-8")
+        if volumes_changed or (prev_dirs_fp and prev_dirs_fp != dirs_fp):
+            recreate_flag = self.host_output_dir / "compose-recreate.requested"
+            recreate_flag.write_text(
+                "backup_dirs_or_volumes_changed\n",
+                encoding="utf-8",
+            )
+            written.append(str(recreate_flag))
 
         stale = {path.stem for path in instances_dir.glob("*.sh")} - {inst.id for inst in settings.instances}
         for stale_id in stale:
