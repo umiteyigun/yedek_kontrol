@@ -96,6 +96,17 @@ def _parse_all_instances_form(form, current: YedekSettings) -> list[dict[str, An
     return instances
 
 
+def _normalize_directorydizini(raw: str, yedek_dir: str, inst: InstanceSettings) -> str:
+    text = (raw or "").strip().replace("\\", "/")
+    if not text:
+        return inst.effective_directorydizini(yedek_dir)
+    if not text.startswith("/"):
+        text = f"/{text}"
+    if not text.endswith("/"):
+        text = f"{text}/"
+    return text
+
+
 def _parse_instance_form(
     form,
     inst: InstanceSettings,
@@ -127,9 +138,11 @@ def _parse_instance_form(
         "schemas": field("schemas", inst.schemas),
         "kurumkodu": field("kurumkodu", inst.kurumkodu),
         "directory": ORACLE_DIRECTORY_NAME,
-        # Coklu instance: kayitli directorydizini korunur (effective_* fallback global yedek_dir)
-        "directorydizini": (inst.directorydizini or "").strip()
-        or inst.effective_directorydizini(yedek_dir),
+        "directorydizini": _normalize_directorydizini(
+            field("directorydizini", inst.directorydizini),
+            yedek_dir,
+            inst,
+        ),
         "oracle_sid": inst.oracle_sid,
         "yedek_kodu": field("yedek_kodu", inst.yedek_kodu),
         "guid_key": field("guid_key", inst.guid_key),
@@ -196,6 +209,9 @@ def _validate_instance(inst: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if not str(inst.get("hastane", "")).strip():
         errors.append(f"{label}: hastane adi zorunlu")
+    dir_path = str(inst.get("directorydizini", "")).strip()
+    if not dir_path.startswith("/"):
+        errors.append(f"{label}: yedek dizini mutlak yol olmali (/ ile baslamali)")
     if inst.get("ftp_upload_enabled"):
         if not str(inst.get("localftpip", "")).strip():
             errors.append(f"{label}: birincil FTP IP zorunlu")
@@ -250,9 +266,17 @@ def _replace_instance_in_settings(
     return payload
 
 
-def _merge_oracle_probes(settings_dict: dict[str, Any]) -> tuple[dict[str, Any], dict[str, OracleProbeResult], list[str]]:
+def _merge_oracle_probes(
+    settings_dict: dict[str, Any],
+    *,
+    sync_directories: bool = False,
+) -> tuple[dict[str, Any], dict[str, OracleProbeResult], list[str]]:
     probes, errors = probe_all_instances(settings_dict)
-    merged = apply_probe_to_settings_dict(settings_dict, probes)
+    merged = apply_probe_to_settings_dict(
+        settings_dict,
+        probes,
+        sync_directories=sync_directories,
+    )
     return merged, probes, errors
 
 
@@ -355,7 +379,9 @@ def _settings_context(
             row["oracle_probe_error"] = probe.error
             if probe.ok:
                 row["directory"] = ORACLE_DIRECTORY_NAME
-                row["directorydizini"] = probe.directorydizini or f"{probe.yedek_dir}/"
+                row["oracle_probe_directorydizini"] = probe.directorydizini or f"{probe.yedek_dir}/"
+                if not str(row.get("directorydizini", "")).strip():
+                    row["directorydizini"] = row["oracle_probe_directorydizini"]
         else:
             row["oracle_probe_ok"] = None
             row["oracle_probe_error"] = ""
@@ -482,7 +508,7 @@ async def settings_oracle_sync(request: Request):
     store = request.app.state.store
     current = store.get()
     payload, discovered = sync_instances_from_oratab(current.model_dump())
-    merged, probes, probe_errors = _merge_oracle_probes(payload)
+    merged, probes, probe_errors = _merge_oracle_probes(payload, sync_directories=True)
     if discovered or any(p.ok for p in probes.values()):
         saved = store.replace(merged)
         message = "Oracle bilgileri senkronize edildi (TRTEK directory)."
@@ -519,7 +545,7 @@ async def settings_oracle_discover(request: Request):
     updated, added = sync_instances_from_oratab(current.model_dump())
     if added:
         saved = store.replace(updated)
-        merged, probes, probe_errors = _merge_oracle_probes(saved.model_dump())
+        merged, probes, probe_errors = _merge_oracle_probes(saved.model_dump(), sync_directories=True)
         if any(p.ok for p in probes.values()):
             saved = store.replace(merged)
         return templates.TemplateResponse(

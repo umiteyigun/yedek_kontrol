@@ -91,6 +91,22 @@ def _write_executable(path: Path, content: str) -> None:
     path.chmod(0o755)
 
 
+def _render_docker_volumes_override(settings: YedekSettings) -> str | None:
+    """ /yedek disi yedek dizinleri icin compose override uretir. """
+    extra = settings.docker_extra_bind_mounts()
+    if not extra:
+        return None
+    lines = ["services:", "  core:", "    volumes:"]
+    for host, container in extra:
+        lines.append(f"      - {host}:{container}")
+    return "\n".join(lines) + "\n"
+
+
+def _write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 class ConfigApplier:
     """Host scriptlerini aninda yazar; container restart gerekmez."""
 
@@ -175,6 +191,10 @@ class ConfigApplier:
         }
         disk_guard_json = {
             "yedek_dir": settings.yedek_dir,
+            "instance_dirs": {
+                inst.id: inst.effective_directorydizini(settings.yedek_dir)
+                for inst in settings.instances
+            },
             "max_usage_pct": settings.backup_disk_max_pct,
             "min_free_gb": settings.backup_disk_min_free_gb,
             "reserve_gb": settings.backup_disk_reserve_gb,
@@ -198,6 +218,34 @@ class ConfigApplier:
                 encoding="utf-8",
             )
             written.append(str(guard_path))
+
+        backup_dirs_json = {
+            "yedek_dir": settings.yedek_dir,
+            "unique_dirs": settings.unique_backup_dirs(),
+            "instances": {
+                inst.id: {
+                    "oracle_sid": inst.oracle_sid,
+                    "directorydizini": inst.effective_directorydizini(settings.yedek_dir),
+                }
+                for inst in settings.instances
+            },
+        }
+        for base in (self.host_output_dir, self.generated_dir):
+            dirs_path = base / "backup-dirs.json"
+            _write_json(dirs_path, backup_dirs_json)
+            written.append(str(dirs_path))
+
+        volumes_override = _render_docker_volumes_override(settings)
+        volumes_path = self.host_output_dir / "docker-compose.volumes.yml"
+        if volumes_override:
+            volumes_path.write_text(volumes_override, encoding="utf-8")
+            written.append(str(volumes_path))
+            (self.generated_dir / "docker-compose.volumes.yml").write_text(
+                volumes_override, encoding="utf-8"
+            )
+        else:
+            volumes_path.unlink(missing_ok=True)
+            (self.generated_dir / "docker-compose.volumes.yml").unlink(missing_ok=True)
 
         stale = {path.stem for path in instances_dir.glob("*.sh")} - {inst.id for inst in settings.instances}
         for stale_id in stale:

@@ -49,14 +49,12 @@ class RetentionService:
                     return instance.effective_retention(settings.retention_days)
         return settings.retention_days
 
-    def run(self) -> None:
-        settings = self._store.get()
+    def _cleanup_dir(self, settings: YedekSettings, yedek_dir: Path, now_ts: float) -> int:
         deleted = 0
-        if not self._yedek_dir.exists():
-            return
+        if not yedek_dir.exists():
+            return deleted
 
-        now_ts = datetime.now().timestamp()
-        for path in list(self._yedek_dir.iterdir()):
+        for path in list(yedek_dir.iterdir()):
             if not path.is_file():
                 continue
 
@@ -95,6 +93,20 @@ class RetentionService:
                 if age_days > keep_days:
                     path.unlink(missing_ok=True)
                     deleted += 1
+        return deleted
+
+    def run(self) -> None:
+        settings = self._store.get()
+        now_ts = datetime.now().timestamp()
+        deleted = 0
+        seen: set[str] = set()
+        for dir_path in settings.unique_backup_dirs():
+            root = Path(dir_path.rstrip("/"))
+            key = str(root)
+            if key in seen:
+                continue
+            seen.add(key)
+            deleted += self._cleanup_dir(settings, root, now_ts)
 
         logger.info(
             "Retention tamamlandi: %s dosya silindi [%s]",

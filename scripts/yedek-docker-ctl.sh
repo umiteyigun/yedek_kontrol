@@ -21,6 +21,9 @@ COMPOSE_ARGS=(-f docker-compose.yml)
 if [[ -f docker-compose.release.yml ]]; then
   COMPOSE_ARGS+=(-f docker-compose.release.yml)
 fi
+if [[ -f /yedek/config/docker-compose.volumes.yml ]]; then
+  COMPOSE_ARGS+=(-f /yedek/config/docker-compose.volumes.yml)
+fi
 
 case "${1:-start}" in
   start)

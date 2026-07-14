@@ -35,6 +35,22 @@ except (IOError, ValueError):
 
 yedek_dir = guard["yedek_dir"]
 check_dir = yedek_dir
+instance_dirs = guard.get("instance_dirs") if isinstance(guard.get("instance_dirs"), dict) else {}
+
+if instance_id and instance_id in instance_dirs:
+    check_dir = str(instance_dirs[instance_id]).rstrip("/")
+elif instance_id:
+    inst_path = os.path.join("/yedek/config/instances", instance_id + ".sh")
+    if os.path.isfile(inst_path):
+        with open(inst_path, "r") as handle:
+            for line in handle:
+                line = line.strip()
+                if line.startswith("directorydizini="):
+                    raw = line.split("=", 1)[1].strip().strip("'\"")
+                    if raw:
+                        check_dir = raw.rstrip("/")
+                    break
+
 if tip.startswith("RMAN_") and instance_id:
     inst_path = os.path.join("/yedek/config/instances", instance_id + ".sh")
     if os.path.isfile(inst_path):
@@ -91,7 +107,9 @@ else:
     source = "default_gunluk"
 
 if not tip.startswith("RMAN_") and instance_id:
-    archive = os.path.join(yedek_dir, instance_id + ".dmp.gz")
+    archive = os.path.join(check_dir, instance_id + ".dmp.gz")
+    if not os.path.isfile(archive):
+        archive = os.path.join(yedek_dir, instance_id + ".dmp.gz")
     if os.path.isfile(archive):
         last_gb = float(os.path.getsize(archive)) / (1024 ** 3)
         required_gb = last_gb * margin

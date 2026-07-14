@@ -80,9 +80,8 @@ class RmanScheduleService:
 
             disk_check = check_rman_disk_space(settings, instance, backup_type)
             if not disk_check.ok:
-                yedek_dir = Path(settings.yedek_dir)
                 record_backup_skip(
-                    yedek_dir,
+                    instance.backup_dir_path(settings.yedek_dir),
                     instance_id,
                     backup_type,
                     disk_check,

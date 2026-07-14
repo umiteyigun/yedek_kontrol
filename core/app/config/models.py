@@ -1,5 +1,6 @@
 import re
 import uuid
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -318,6 +319,10 @@ class InstanceSettings(BaseModel):
             return custom
         return f"{yedek_dir.rstrip('/')}/"
 
+    def backup_dir_path(self, yedek_dir: str) -> Path:
+        """Yedek dosyalarinin bulundugu dizin (trailing slash yok)."""
+        return Path(self.effective_directorydizini(yedek_dir).rstrip("/"))
+
     def effective_rman_dest(self) -> str:
         """Instance bazli RMAN kok dizini: /yedek/rman/<id>/"""
         base = self.rman_dest.rstrip("/") or "/yedek/rman"
@@ -556,3 +561,31 @@ class YedekSettings(BaseModel):
         data["localftppass"] = "***"
         data["ldap_bind_password"] = "***"
         return data
+
+    def unique_backup_dirs(self) -> list[str]:
+        """Tum instance'larin farkli yedek dizinleri (sonunda /)."""
+        seen: set[str] = set()
+        dirs: list[str] = []
+        default = f"{self.yedek_dir.rstrip('/')}/"
+        for inst in self.instances:
+            path = inst.effective_directorydizini(self.yedek_dir)
+            if path not in seen:
+                seen.add(path)
+                dirs.append(path)
+        if default not in seen:
+            dirs.insert(0, default)
+        return dirs
+
+    def docker_extra_bind_mounts(self) -> list[tuple[str, str]]:
+        """/yedek disindaki yedek dizinleri icin ekstra docker bind (host, container)."""
+        binds: list[tuple[str, str]] = []
+        seen: set[str] = {"/yedek"}
+        for inst in self.instances:
+            host = inst.effective_directorydizini(self.yedek_dir).rstrip("/")
+            if not host or host == "/yedek" or host.startswith("/yedek/"):
+                continue
+            if host in seen:
+                continue
+            seen.add(host)
+            binds.append((host, host))
+        return binds

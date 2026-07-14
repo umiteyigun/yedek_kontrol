@@ -127,7 +127,7 @@ def backup_root(settings: YedekSettings) -> Path:
 
 
 def instance_dir(settings: YedekSettings, instance: InstanceSettings) -> Path:
-    return backup_root(settings)
+    return instance.backup_dir_path(settings.yedek_dir)
 
 
 def resolve_instance(settings: YedekSettings, instance_id: str | None) -> InstanceSettings | None:
@@ -170,7 +170,7 @@ def list_backups(
     instance: InstanceSettings,
     limit: int = 100,
 ) -> list[BackupItem]:
-    root = backup_root(settings)
+    root = instance_dir(settings, instance)
     root.mkdir(parents=True, exist_ok=True)
     groups = _collect_backup_groups(root, instance)
     rows: list[tuple[float, BackupItem]] = []
@@ -232,7 +232,7 @@ def _read_log_file(path: Path) -> str:
 
 
 def read_log(settings: YedekSettings, instance: InstanceSettings, name: str, tail_lines: int = 0) -> str:
-    root = backup_root(settings)
+    root = instance_dir(settings, instance)
     path = _resolve_in_root(root, name)
     if not path.exists():
         return "Log dosyasi bulunamadi."
@@ -271,7 +271,7 @@ def resolve_backup_artifacts(
     instance: InstanceSettings,
     base_name: str,
 ) -> list[tuple[Path, str]]:
-    root = backup_root(settings)
+    root = instance_dir(settings, instance)
     clean = base_name.strip()
     if not clean or not re.fullmatch(r"[\w.\-]+", clean):
         raise ValueError(f"Gecersiz yedek adi: {base_name}")
@@ -341,7 +341,7 @@ def delete_backup(settings: YedekSettings, instance: InstanceSettings, archive_n
         or "(+" in archive_name
     ):
         raise ValueError("Gecersiz yedek dosya adi")
-    root = backup_root(settings)
+    root = instance_dir(settings, instance)
     clean_name = archive_name.split(" (+", 1)[0].strip()
     archive = _find_archive(root, instance, clean_name)
     if archive is None:
@@ -391,7 +391,7 @@ def queue_rman_backup(trigger_path: Path, tip: str, instance_id: str = "") -> No
     trigger_path.write_text(payload, encoding="utf-8")
 
 
-def backup_status(yedek_dir: Path) -> dict:
+def backup_status(yedek_dir: Path, *, instance_id: str = "") -> dict:
     status_file = yedek_dir / ".backup-status.json"
     running_lock = yedek_dir / ".backup-running"
     defaults = {
@@ -431,7 +431,15 @@ def backup_status(yedek_dir: Path) -> dict:
         elif not data.get("stages"):
             data["state"] = "idle"
 
-    data.setdefault("instance_id", "")
+    data.setdefault("instance_id", instance_id)
     data.setdefault("reason", "")
     data.setdefault("stages", {})
+    if instance_id and data.get("instance_id") and data.get("instance_id") != instance_id:
+        if data.get("state") == "running":
+            data = dict(defaults)
+            data["instance_id"] = instance_id
     return enrich_backup_status(data)
+
+
+def backup_status_for_instance(settings: YedekSettings, instance: InstanceSettings) -> dict:
+    return backup_status(instance_dir(settings, instance), instance_id=instance.id)

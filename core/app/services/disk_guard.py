@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.config.models import InstanceSettings, YedekSettings
-from app.services.backups import backup_root, list_backups
+from app.services.backups import instance_dir, list_backups
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ def check_backup_disk_space(
     backup_type: str,
 ) -> DiskSpaceCheck:
     thresholds = disk_thresholds(settings)
-    root = backup_root(settings)
+    root = instance_dir(settings, instance)
     root.mkdir(parents=True, exist_ok=True)
 
     try:

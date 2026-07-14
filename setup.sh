@@ -89,11 +89,14 @@ is_public_runtime() {
 }
 
 compose_files() {
+  local args=(-f "$ROOT/docker-compose.yml")
   if [[ -f "$ROOT/docker-compose.release.yml" ]]; then
-    echo "-f" "$ROOT/docker-compose.yml" "-f" "$ROOT/docker-compose.release.yml"
-  else
-    echo "-f" "$ROOT/docker-compose.yml"
+    args+=(-f "$ROOT/docker-compose.release.yml")
   fi
+  if [[ -f /yedek/config/docker-compose.volumes.yml ]]; then
+    args+=(-f /yedek/config/docker-compose.volumes.yml)
+  fi
+  printf '%s ' "${args[@]}"
 }
 
 write_release_compose_override() {

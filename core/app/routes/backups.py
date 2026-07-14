@@ -83,12 +83,16 @@ def log_content_api(
 
 
 @router.get("/api/v1/backup/status")
-def backup_status_api(request: Request):
+def backup_status_api(request: Request, instance_id: str = Query("")):
     if not get_current_user(request):
         return JSONResponse({"ok": False, "error": "Oturum gerekli"}, status_code=401)
     if not can(request, "backups", "view"):
         return JSONResponse({"ok": False, "error": "Yetki gerekli"}, status_code=403)
-    status = backup_service.backup_status(Path(request.app.state.yedek_dir))
+    settings = request.app.state.store.get()
+    instance = settings.get_instance(instance_id) if instance_id else settings.first_instance()
+    if not instance:
+        return JSONResponse({"ok": False, "error": "Instance bulunamadi"}, status_code=404)
+    status = backup_service.backup_status_for_instance(settings, instance)
     return JSONResponse({"ok": True, "status": status})
 
 
@@ -110,7 +114,7 @@ def backups_page(request: Request):
 
     items = backup_service.list_backups(settings, active)
     all_items = backup_service.list_backups(settings, active, limit=500)
-    status = backup_service.backup_status(Path(request.app.state.yedek_dir))
+    status = backup_service.backup_status_for_instance(settings, active)
     ctx = page_context(request, settings)
     ctx.update(
         {
@@ -137,18 +141,18 @@ def start_backup(
         return permission_denied_redirect("backups")
 
     settings = request.app.state.store.get()
-    yedek_dir = Path(request.app.state.yedek_dir)
-    if (yedek_dir / ".backup-running").exists():
-        return RedirectResponse(url="/yedekler?error=Zaten+calisiyor", status_code=303)
-
     instance = settings.get_instance(instance_id) if instance_id else settings.first_instance()
     if not instance:
         return RedirectResponse(url="/yedekler?error=Instance+bulunamadi", status_code=303)
 
+    inst_dir = instance.backup_dir_path(settings.yedek_dir)
+    if (inst_dir / ".backup-running").exists():
+        return RedirectResponse(url="/yedekler?error=Zaten+calisiyor", status_code=303)
+
     try:
         disk_check = check_backup_disk_space(settings, instance, tip)
         if not disk_check.ok:
-            record_backup_skip(yedek_dir, instance.id, tip, disk_check, scheduled=False)
+            record_backup_skip(inst_dir, instance.id, tip, disk_check, scheduled=False)
             return RedirectResponse(
                 url=f"/yedekler?instance={instance.id}&error={disk_check.reason}",
                 status_code=303,

@@ -141,23 +141,30 @@ def probe_instance(
         return OracleProbeResult(ok=False, error=f"Gecersiz probe cevabi: {snippet}", oracle_sid=oracle_sid)
 
 
-def apply_probe_to_settings_dict(settings_dict: dict, probes: dict[str, OracleProbeResult]) -> dict:
+def apply_probe_to_settings_dict(
+    settings_dict: dict,
+    probes: dict[str, OracleProbeResult],
+    *,
+    sync_directories: bool = False,
+) -> dict:
     """Kilitli alanlari Oracle sonucuyla guncelle."""
     updated = dict(settings_dict)
     instances = []
     global_yedek_dir = updated.get("yedek_dir", "/yedek/orayedek")
     global_ver = updated.get("oracle_ver", "")
     global_host = updated.get("hostname", "")
+    primary_yedek_dir = ""
 
     for inst in updated.get("instances", []):
         row = dict(inst)
         probe = probes.get(row.get("id", ""))
         if probe and probe.ok:
             row["directory"] = ORACLE_DIRECTORY_NAME
-            row["directorydizini"] = probe.directorydizini or f"{probe.yedek_dir}/"
+            if sync_directories or not str(row.get("directorydizini", "")).strip():
+                row["directorydizini"] = probe.directorydizini or f"{probe.yedek_dir}/"
             row["oracle_sid"] = probe.oracle_sid or row.get("oracle_sid", "")
-            if probe.yedek_dir:
-                global_yedek_dir = probe.yedek_dir
+            if probe.yedek_dir and not primary_yedek_dir:
+                primary_yedek_dir = probe.yedek_dir
             if probe.oracle_ver:
                 global_ver = probe.oracle_ver
             if probe.hostname:
@@ -167,6 +174,8 @@ def apply_probe_to_settings_dict(settings_dict: dict, probes: dict[str, OraclePr
         instances.append(row)
 
     updated["instances"] = instances
+    if primary_yedek_dir:
+        global_yedek_dir = primary_yedek_dir
     updated["yedek_dir"] = global_yedek_dir
     updated["oracle_ver"] = global_ver
     updated["hostname"] = global_host

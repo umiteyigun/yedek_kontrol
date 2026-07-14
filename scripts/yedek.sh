@@ -11,7 +11,8 @@ readonly PARAMS_FILE="${CONFIG_DIR}/yedek-params.sh"
 readonly CONFIG_FILE="${CONFIG_DIR}/yedekconfig.sh"
 readonly INSTANCES_DIR="${CONFIG_DIR}/instances"
 readonly INSTANCES_LIST="${CONFIG_DIR}/instances.list"
-readonly BACKUP_STATUS_FILE="/yedek/orayedek/.backup-status.json"
+DEFAULT_BACKUP_STATUS_FILE="/yedek/orayedek/.backup-status.json"
+BACKUP_STATUS_FILE="${BACKUP_STATUS_FILE:-$DEFAULT_BACKUP_STATUS_FILE}"
 
 if [[ -f "${CONFIG_DIR}/backup-status-lib.sh" ]]; then
   # shellcheck source=/dev/null
@@ -386,6 +387,8 @@ run_instance_file() {
   local instance_file="$1"
   # shellcheck source=/dev/null
   source "$instance_file"
+  BACKUP_STATUS_FILE="${directorydizini%/}/.backup-status.json"
+  export BACKUP_STATUS_FILE
   backup_current_instance
 }
 

@@ -64,7 +64,7 @@
       </article>
       <article class="mini-stat panel-3d reveal reveal-d3">
         <p class="label">Yedek Dizini</p>
-        <p class="value" style="font-size:0.95rem;">{{ settings.yedek_dir }}/</p>
+        <p class="value" style="font-size:0.95rem;">{{ active_instance.directorydizini or (settings.yedek_dir ~ '/') }}</p>
         <p class="meta">Instance: {{ active_instance_id }}</p>
       </article>
     </section>

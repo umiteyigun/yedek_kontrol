@@ -14,7 +14,7 @@ services:
     volumes:
       - ./config:/app/config
       - /yedek/config:/host-output
-      - /yedek/orayedek:/yedek/orayedek
+      - /yedek:/yedek
       - /yedek/config/yedekconfig.sh:/host-config/yedekconfig.sh:ro
     environment:
       CONFIG_DIR: /app/config

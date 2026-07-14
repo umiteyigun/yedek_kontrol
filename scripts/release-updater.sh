@@ -181,6 +181,17 @@ compose() {
   fi
 }
 
+compose_files() {
+  local -a files=(-f "$ROOT/docker-compose.yml")
+  if [[ -f "$COMPOSE_OVERRIDE" ]]; then
+    files+=(-f "$COMPOSE_OVERRIDE")
+  fi
+  if [[ -f /yedek/config/docker-compose.volumes.yml ]]; then
+    files+=(-f /yedek/config/docker-compose.volumes.yml)
+  fi
+  printf '%s\n' "${files[@]}"
+}
+
 write_state() {
   local status="$1"
   local message="$2"
@@ -252,9 +263,10 @@ EOF
   fi
 
   cd "$ROOT"
-  compose -f docker-compose.yml -f docker-compose.release.yml up -d --force-recreate core
+  mapfile -t COMPOSE_FILES < <(compose_files)
+  compose "${COMPOSE_FILES[@]}" up -d --force-recreate core
   if [[ -f /yedek/config/central-agent.env ]] && grep -q '^ORG_ENROLLMENT_CODE=' /yedek/config/central-agent.env; then
-    compose --profile central -f docker-compose.yml -f docker-compose.release.yml up -d --force-recreate central-agent || true
+    compose --profile central "${COMPOSE_FILES[@]}" up -d --force-recreate central-agent || true
   fi
 
   if ! curl -sf --max-time 8 http://127.0.0.1:8090/health >/dev/null; then

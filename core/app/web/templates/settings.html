@@ -144,6 +144,21 @@
                 Oracle SID
                 <input type="text" value="{{ inst.oracle_sid }}" readonly tabindex="-1">
               </label>
+              <label class="full">
+                Yedek Dizini (directorydizini)
+                <input
+                  type="text"
+                  name="directorydizini"
+                  value="{{ inst.directorydizini or (settings.yedek_dir ~ '/') }}"
+                  placeholder="/yedek/orayedek/"
+                  required
+                >
+              </label>
+              <p class="form-hint full">
+                Coklu Oracle instance icin her kurumun kendi yedek klasoru olabilir
+                (ornek: <code>/yedek/orayedek/</code>, <code>/yedek/orayedek1/</code>).
+                Oracle senkronu bos birakildiginda TRTEK directory yolunu doldurur.
+              </p>
               <label class="schema-picker-field full">
                 Schema
                 <div class="schema-field-row">

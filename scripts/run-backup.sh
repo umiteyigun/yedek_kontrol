@@ -3,12 +3,23 @@ set -euo pipefail
 
 RAW_TIP="${1:-GUNLUK}"
 YEDEK_DIR="/yedek/orayedek"
-RUN_LOG="${YEDEK_DIR}/panel-backup-$(date +%Y%m%d%H%M%S).log"
-STATUS_FILE="${YEDEK_DIR}/.backup-status.json"
-BACKUP_STATUS_FILE="$STATUS_FILE"
+RUN_LOG=""
+STATUS_FILE=""
+BACKUP_STATUS_FILE=""
 
 # shellcheck source=/dev/null
 source /yedek/config/backup-status-lib.sh
+
+resolve_instance_backup_dir() {
+  local inst_id="${1:-}"
+  local cfg="" dest=""
+  if [[ -n "$inst_id" && -f "/yedek/config/instances/${inst_id}.sh" ]]; then
+    dest="$(grep -m1 '^directorydizini=' "/yedek/config/instances/${inst_id}.sh" | cut -d= -f2- | tr -d "'\"")"
+    dest="${dest%/}"
+    [[ -n "$dest" ]] && printf '%s\n' "$dest" && return 0
+  fi
+  printf '%s\n' "$YEDEK_DIR"
+}
 
 TIP="$RAW_TIP"
 INSTANCE_ID=""
@@ -86,8 +97,12 @@ prepare_backup_dirs() {
   fi
 }
 
-write_status "running" 0
 prepare_backup_dirs "$INSTANCE_ID"
+INSTANCE_DIR="$(resolve_instance_backup_dir "$INSTANCE_ID")"
+RUN_LOG="${INSTANCE_DIR}/panel-backup-$(date +%Y%m%d%H%M%S).log"
+STATUS_FILE="${INSTANCE_DIR}/.backup-status.json"
+BACKUP_STATUS_FILE="$STATUS_FILE"
+write_status "running" 0
 if ! DISK_MSG="$(/yedek/config/disk-check-backup.sh "$TIP" "$INSTANCE_ID" 2>&1)"; then
   bs_finish --state skipped --exit-code 12
   bs_set_reason "$DISK_MSG" || true
