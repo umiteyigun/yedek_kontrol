@@ -54,7 +54,8 @@ fi
 if [[ -z "$FORCE_TAG" && -n "$_ENV_TRACK" ]]; then
   RELEASE_TRACK="$_ENV_TRACK"
 fi
-: "${RELEASE_MANIFEST_URL:=https://git.trtek.tr/yedek_kontrol_public/-/raw/main/release/latest.env}"
+: "${RELEASE_MANIFEST_URL:=https://centos.trtekyazilim.com:8444/release/latest.env}"
+: "${HUB_MANIFEST_URL:=https://centos.trtekyazilim.com:8444/release/latest.env}"
 : "${RELEASE_CORE_IMAGE:=git.trtek.tr/umiteyigun/yedek_kontrol/yedek-core}"
 : "${RELEASE_AGENT_IMAGE:=git.trtek.tr/umiteyigun/yedek_kontrol/yedek-central-agent}"
 : "${RELEASE_REGISTRY_HOST:=git.trtek.tr}"
@@ -128,26 +129,48 @@ print(max(tags))
 PY
 }
 
+# HTTP manifesto indirme: OneDev login HTML / DOCTYPE ele; gecerli tag dondur
+fetch_manifest_tag() {
+  local url="$1"
+  local tmp manifest_tag=""
+  [[ -n "$url" ]] || return 1
+  tmp="$(mktemp /tmp/yedek-release-manifest.XXXXXX)"
+  if ! curl -skf --max-time 20 "$url" -o "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  if grep -qiE '<!doctype|<html|/~login' "$tmp" 2>/dev/null; then
+    echo "[$(ts)] manifest HTML/login (atlanıyor): $url" >&2
+    rm -f "$tmp"
+    return 1
+  fi
+  manifest_tag="$(grep -m1 '^RELEASE_TARGET_TAG=' "$tmp" | cut -d= -f2- | tr -d '[:space:]')"
+  rm -f "$tmp"
+  if [[ -n "$manifest_tag" && "$manifest_tag" =~ ^[0-9A-Za-z._-]+$ ]]; then
+    echo "$manifest_tag"
+    return 0
+  fi
+  return 1
+}
+
 resolve_target_tag() {
   local track="${RELEASE_TRACK:-pin}"
   local pinned="${RELEASE_TARGET_TAG:-}"
   if [[ "$track" == "latest" ]]; then
-    local url="${RELEASE_MANIFEST_URL:-}"
-    local tmp manifest_tag="" registry_tag=""
-    if [[ -n "$url" ]]; then
-      tmp="$(mktemp /tmp/yedek-release-manifest.XXXXXX)"
-      if curl -skf --max-time 20 "$url" -o "$tmp"; then
-        manifest_tag="$(grep -m1 '^RELEASE_TARGET_TAG=' "$tmp" | cut -d= -f2- | tr -d '[:space:]')"
-        # OneDev login HTML vb. sahte cevaplari ele
-        if [[ -n "$manifest_tag" && "$manifest_tag" =~ ^[0-9A-Za-z._-]+$ ]]; then
-          rm -f "$tmp"
-          echo "$manifest_tag"
-          return 0
-        fi
+    local url="" manifest_tag="" registry_tag=""
+    local -a urls=()
+    # 1) env manifest  2) hub public  (ayni URL tekrarlanmasin)
+    [[ -n "${RELEASE_MANIFEST_URL:-}" ]] && urls+=("${RELEASE_MANIFEST_URL}")
+    [[ -n "${HUB_MANIFEST_URL:-}" && "${HUB_MANIFEST_URL}" != "${RELEASE_MANIFEST_URL:-}" ]] && urls+=("${HUB_MANIFEST_URL}")
+    for url in "${urls[@]}"; do
+      if manifest_tag="$(fetch_manifest_tag "$url")"; then
+        echo "[$(ts)] manifest OK ($url) -> $manifest_tag" >&2
+        echo "$manifest_tag"
+        return 0
       fi
-      rm -f "$tmp"
-    fi
+    done
     if registry_tag="$(resolve_target_tag_from_registry)"; then
+      echo "[$(ts)] registry OK -> $registry_tag" >&2
       echo "$registry_tag"
       return 0
     fi

@@ -57,19 +57,42 @@ jobs:
     condition: SUCCESSFUL
     optional: false
   - type: CommandStep
+    name: publish-release-manifest-hub
+    runInContainer: true
+    image: alpine:3.20
+    interpreter:
+      type: DefaultInterpreter
+      commands: |
+        apk add --no-cache curl
+        set -eu
+        HUB_URL="${HUB_RELEASE_URL:-https://centos.trtekyazilim.com:8444}"
+        echo "Hub publish: $HUB_URL tag=@build_number@"
+        curl -fsS -X PUT "${HUB_URL}/api/v1/release/latest" \
+          -H "Authorization: Bearer @secrets:hub-release-publish-token@" \
+          -H "Content-Type: application/json" \
+          -d "{\"tag\":\"@build_number@\"}"
+        echo
+        curl -fsS "${HUB_URL}/release/latest.env" | head -5
+    useTTY: true
+    condition: SUCCESSFUL
+    optional: false
+  - type: CommandStep
     name: publish-release-manifest
     runInContainer: true
     image: alpine:3.20
     interpreter:
       type: DefaultInterpreter
       commands: |
-        apk add --no-cache git curl
-        set -eu
+        # Eski kanal (OneDev public raw); login duvari varsa build kirmasin
+        apk add --no-cache git curl || true
+        set +e
         git config --global user.email "ci@@trtek.tr"
         git config --global user.name "OneDev CI"
-        # @server_url@ = https://git.trtek.tr — basina https:// eklenirse host '****https' olur
         _host=$(echo "@server_url@" | sed 's|^https\?://||')
-        git clone "https://@job_token@${_host}/yedek_kontrol_public.git" /tmp/public
+        git clone "https://@job_token@${_host}/yedek_kontrol_public.git" /tmp/public || {
+          echo "public repo clone atlandi (opsiyonel)"
+          exit 0
+        }
         cd /tmp/public
         mkdir -p release
         cat > release/latest.env <<EOF
@@ -79,10 +102,11 @@ jobs:
         EOF
         git add release/latest.env
         git diff --staged --quiet || git commit -m "release: image tag @build_number@"
-        git push origin HEAD:main
+        git push origin HEAD:main || echo "public push atlandi (opsiyonel)"
+        exit 0
     useTTY: true
     condition: SUCCESSFUL
-    optional: false
+    optional: true
   triggers:
   - type: BranchUpdateTrigger
     branches: main
