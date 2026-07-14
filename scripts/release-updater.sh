@@ -338,7 +338,7 @@ deploy_tag() {
   local phase="${2:-deploy}"
   local tmpdir
   tmpdir="$(mktemp -d /tmp/yedek-release.XXXXXX)"
-  trap 'rm -rf "$tmpdir"' RETURN
+  trap 'rm -rf "$tmpdir"; trap - RETURN' RETURN
 
   cat >"$COMPOSE_OVERRIDE" <<EOF
 services:
