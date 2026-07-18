@@ -56,6 +56,7 @@ async def lifespan(app: FastAPI):
     settings = store.load()
     discovery.run()
     settings = store.get()
+    runtime_yedek_dir = Path(settings.yedek_dir or str(YEDEK_DIR))
     applier.apply(settings)
     if LOCAL_FTP_ENABLED:
         ftp.start(settings)
@@ -79,7 +80,7 @@ async def lifespan(app: FastAPI):
     app.state.store = store
     app.state.applier = applier
     app.state.ftp = ftp
-    app.state.yedek_dir = YEDEK_DIR
+    app.state.yedek_dir = runtime_yedek_dir
     app.state.backup_trigger = BACKUP_TRIGGER
     app.state.notifications = notifications
     app.state.discovery = discovery
