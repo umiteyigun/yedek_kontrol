@@ -24,8 +24,7 @@ else
       $1 == "MemFree:" {f=$2}
       $1 == "Buffers:" {b=$2}
       $1 == "Cached:" {c=$2}
-      $1 == "SReclaimable:" {s=$2}
-      END {print int((f+b+c+s)/1024)}
+      END {print int((f+b+c)/1024)}
     ' /proc/meminfo
   )"
 fi
