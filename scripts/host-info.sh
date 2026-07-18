@@ -16,10 +16,18 @@ CPU_MODEL="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | xa
 LOAD_AVG="$(awk '{print $1", "$2", "$3}' /proc/loadavg 2>/dev/null || echo "-")"
 
 MEM_TOTAL_MB="$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)"
-if awk '/MemAvailable/ {exit 0} END {exit 1}' /proc/meminfo 2>/dev/null; then
+if grep -q '^MemAvailable:' /proc/meminfo 2>/dev/null; then
   MEM_AVAIL_MB="$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo)"
 else
-  MEM_AVAIL_MB="$(awk '/MemFree/ {f=$2} /Buffers/ {b=$2} /Cached/ {c=$2} END {print int((f+b+c)/1024)}' /proc/meminfo)"
+  MEM_AVAIL_MB="$(
+    awk '
+      $1 == "MemFree:" {f=$2}
+      $1 == "Buffers:" {b=$2}
+      $1 == "Cached:" {c=$2}
+      $1 == "SReclaimable:" {s=$2}
+      END {print int((f+b+c+s)/1024)}
+    ' /proc/meminfo
+  )"
 fi
 MEM_USED_MB=$((MEM_TOTAL_MB - MEM_AVAIL_MB))
 if [[ "$MEM_TOTAL_MB" -gt 0 ]]; then
