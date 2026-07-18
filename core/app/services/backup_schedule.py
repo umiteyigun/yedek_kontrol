@@ -13,6 +13,7 @@ from app.services.disk_guard import check_backup_disk_space, record_backup_skip
 logger = logging.getLogger(__name__)
 
 DEFAULT_SCHEDULE_TIMEZONE = "Europe/Istanbul"
+SCHEDULE_MISFIRE_GRACE_SECONDS = 3600
 
 
 def schedule_timezone(settings: YedekSettings) -> str:
@@ -70,6 +71,8 @@ class BackupScheduleService:
                     trigger=trigger,
                     id=job_id,
                     replace_existing=True,
+                    coalesce=True,
+                    misfire_grace_time=SCHEDULE_MISFIRE_GRACE_SECONDS,
                 )
                 job_count += 1
 

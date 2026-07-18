@@ -10,7 +10,11 @@ from app.config.store import ConfigStore
 from app.services.backups import queue_rman_backup
 from app.services.disk_guard import check_rman_disk_space, record_backup_skip
 
-from app.services.backup_schedule import DEFAULT_SCHEDULE_TIMEZONE, schedule_timezone
+from app.services.backup_schedule import (
+    DEFAULT_SCHEDULE_TIMEZONE,
+    SCHEDULE_MISFIRE_GRACE_SECONDS,
+    schedule_timezone,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +69,8 @@ class RmanScheduleService:
                     trigger=trigger,
                     id=job_id,
                     replace_existing=True,
+                    coalesce=True,
+                    misfire_grace_time=SCHEDULE_MISFIRE_GRACE_SECONDS,
                 )
                 job_count += 1
 
