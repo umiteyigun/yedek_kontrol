@@ -73,7 +73,11 @@ install -m 755 "$ROOT/scripts/install-host-scripts.sh" /yedek/config/install-hos
 # release-updater hostta kalici kopya (image deploy sonrasi da guncellenir)
 mkdir -p /opt/yedek_kontrol/scripts
 if [[ -f "$ROOT/scripts/release-updater.sh" ]]; then
-  install -m 755 "$ROOT/scripts/release-updater.sh" /opt/yedek_kontrol/scripts/release-updater.sh
+  if [[ "$ROOT/scripts/release-updater.sh" != "/opt/yedek_kontrol/scripts/release-updater.sh" ]]; then
+    install -m 755 "$ROOT/scripts/release-updater.sh" /opt/yedek_kontrol/scripts/release-updater.sh
+  else
+    chmod 755 /opt/yedek_kontrol/scripts/release-updater.sh
+  fi
   install -m 755 "$ROOT/scripts/release-updater.sh" /yedek/config/release-updater.sh
 fi
 
