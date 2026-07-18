@@ -477,7 +477,17 @@ EOF
     return 1
   fi
 
-  if ! systemctl is-active --quiet yedek-backup-watcher.service; then
+  local watcher_active=1
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl is-active --quiet yedek-backup-watcher.service || watcher_active=0
+  elif command -v service >/dev/null 2>&1; then
+    service yedek-backup-watcher status >/dev/null 2>&1 || watcher_active=0
+  elif pgrep -f '/yedek/config/backup-watcher.sh' >/dev/null 2>&1; then
+    watcher_active=1
+  else
+    watcher_active=0
+  fi
+  if [[ "$watcher_active" != "1" ]]; then
     echo "[$(ts)] ${phase}: backup watcher inactive tag=${tag}" >&2
     return 1
   fi
