@@ -428,24 +428,48 @@ EOF
   ensure_release_env_vars
 
   if [[ "$RELEASE_SKIP_PULL" != "1" ]]; then
-    docker pull "${RELEASE_CORE_IMAGE}:${tag}" >/dev/null
-    docker pull "${RELEASE_AGENT_IMAGE}:${tag}" >/dev/null || true
+    if ! docker pull "${RELEASE_CORE_IMAGE}:${tag}" >/dev/null; then
+      echo "[$(ts)] ${phase}: core image pull failed tag=${tag}" >&2
+      return 1
+    fi
+    if [[ -f /yedek/config/central-agent.env ]] && grep -q '^ORG_ENROLLMENT_CODE=' /yedek/config/central-agent.env; then
+      if ! docker pull "${RELEASE_AGENT_IMAGE}:${tag}" >/dev/null; then
+        echo "[$(ts)] ${phase}: central-agent image pull failed tag=${tag}" >&2
+        return 1
+      fi
+    fi
   fi
 
   local cid
-  cid="$(docker create "${RELEASE_CORE_IMAGE}:${tag}")"
-  docker cp "${cid}:/opt/host-scripts/." "$tmpdir/"
-  docker rm -f "$cid" >/dev/null
+  if ! cid="$(docker create "${RELEASE_CORE_IMAGE}:${tag}")"; then
+    echo "[$(ts)] ${phase}: core helper container create failed tag=${tag}" >&2
+    return 1
+  fi
+  if ! docker cp "${cid}:/opt/host-scripts/." "$tmpdir/"; then
+    docker rm -f "$cid" >/dev/null 2>&1 || true
+    echo "[$(ts)] ${phase}: host scripts extract failed tag=${tag}" >&2
+    return 1
+  fi
+  docker rm -f "$cid" >/dev/null || return 1
 
   if [[ -x "$tmpdir/scripts/install-host-scripts.sh" ]]; then
-    YEDEK_ROOT="$tmpdir" bash "$tmpdir/scripts/install-host-scripts.sh"
+    if ! YEDEK_ROOT="$tmpdir" bash "$tmpdir/scripts/install-host-scripts.sh"; then
+      echo "[$(ts)] ${phase}: host scripts install failed tag=${tag}" >&2
+      return 1
+    fi
   fi
 
   cd "$ROOT"
   mapfile -t COMPOSE_FILES < <(compose_files)
-  compose "${COMPOSE_FILES[@]}" up -d --force-recreate core
+  if ! compose "${COMPOSE_FILES[@]}" up -d --force-recreate core; then
+    echo "[$(ts)] ${phase}: core compose failed tag=${tag}" >&2
+    return 1
+  fi
   if [[ -f /yedek/config/central-agent.env ]] && grep -q '^ORG_ENROLLMENT_CODE=' /yedek/config/central-agent.env; then
-    compose --profile central "${COMPOSE_FILES[@]}" up -d --force-recreate central-agent || true
+    if ! compose --profile central "${COMPOSE_FILES[@]}" up -d --force-recreate central-agent; then
+      echo "[$(ts)] ${phase}: central-agent compose failed tag=${tag}" >&2
+      return 1
+    fi
   fi
 
   if ! curl -sf --max-time 8 http://127.0.0.1:8090/health >/dev/null; then
