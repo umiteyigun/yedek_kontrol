@@ -31,7 +31,7 @@ fi
 disk_field() {
   local mount="$1"
   local line
-  line="$(df -BG "$mount" 2>/dev/null | tail -1 || true)"
+  line="$(df -P -BG "$mount" 2>/dev/null | tail -1 || true)"
   if [[ -z "$line" ]]; then
     echo "0 0 0"
     return
