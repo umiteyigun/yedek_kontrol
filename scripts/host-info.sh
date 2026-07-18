@@ -51,7 +51,23 @@ disk_field() {
 }
 
 read -r DISK_ROOT_TOTAL DISK_ROOT_USED DISK_ROOT_PCT <<<"$(disk_field /)"
-read -r DISK_YEDEK_TOTAL DISK_YEDEK_USED DISK_YEDEK_PCT <<<"$(disk_field /yedek)"
+
+YEDEK_MOUNT="${YEDEK_MOUNT:-/yedek}"
+if [[ "$YEDEK_MOUNT" == "/yedek" ]]; then
+  for instance_file in /yedek/config/instances/*.sh; do
+    [[ -f "$instance_file" ]] || continue
+    candidate="$(sed -n 's/^directorydizini=//p' "$instance_file" | head -1)"
+    candidate="${candidate#\'}"
+    candidate="${candidate%\'}"
+    candidate="${candidate#\"}"
+    candidate="${candidate%\"}"
+    if [[ -d "$candidate" ]]; then
+      YEDEK_MOUNT="$candidate"
+      break
+    fi
+  done
+fi
+read -r DISK_YEDEK_TOTAL DISK_YEDEK_USED DISK_YEDEK_PCT <<<"$(disk_field "$YEDEK_MOUNT")"
 
 CLOCK_EPOCH="$(date +%s)"
 CLOCK_DATETIME="$(date '+%d.%m.%Y %H:%M:%S')"
