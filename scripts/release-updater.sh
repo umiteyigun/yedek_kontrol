@@ -1,4 +1,6 @@
 #!/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
 # Release updater (image tabanli): core/agent image cek, host scriptleri image'dan cikar,
 # health check basarisizsa onceki taga rollback yap.
 set -euo pipefail
@@ -244,10 +246,18 @@ TARGET_TAG="$(resolve_target_tag)"
 echo "[$(ts)] target=${TARGET_TAG} track=${RELEASE_TRACK:-pin} force=${FORCE_TAG:-}"
 
 compose() {
+  # cron PATH dar olabilir (/usr/local/bin eksik) — absolute fallback
   if docker compose version >/dev/null 2>&1; then
     docker compose "$@"
-  else
+  elif command -v docker-compose >/dev/null 2>&1; then
     docker-compose "$@"
+  elif [[ -x /usr/local/bin/docker-compose ]]; then
+    /usr/local/bin/docker-compose "$@"
+  elif [[ -x /usr/libexec/docker/cli-plugins/docker-compose ]]; then
+    /usr/libexec/docker/cli-plugins/docker-compose "$@"
+  else
+    echo "[$(ts)] docker compose / docker-compose bulunamadi (PATH=$PATH)" >&2
+    return 127
   fi
 }
 

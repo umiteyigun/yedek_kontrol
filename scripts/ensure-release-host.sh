@@ -42,7 +42,7 @@ fi
 # --- release cron: DIS FLOCK YOK (script kendi kilidini alir) ---
 cat >"$CRON_REL" <<'EOF'
 SHELL=/bin/bash
-PATH=/sbin:/bin:/usr/sbin:/usr/bin
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 */2 * * * * root /yedek/config/release-updater.sh >>/var/log/yedek-release-update.log 2>&1
 EOF
 chmod 644 "$CRON_REL"
@@ -51,7 +51,7 @@ log "cron.d/yedek-release-update yazildi (flock yok)"
 # --- watcher keep-alive cron (process yoksa baslat) ---
 cat >"$CRON_WATCH" <<'EOF'
 SHELL=/bin/bash
-PATH=/sbin:/bin:/usr/sbin:/usr/bin
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 */5 * * * * root pgrep -f '/yedek/config/backup-watcher\.sh' >/dev/null 2>&1 || nohup /yedek/config/backup-watcher.sh >>/yedek/orayedek/backup-watcher.log 2>&1 &
 EOF
 chmod 644 "$CRON_WATCH"
