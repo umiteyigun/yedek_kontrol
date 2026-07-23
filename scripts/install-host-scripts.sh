@@ -94,15 +94,10 @@ else
   nohup /yedek/config/backup-watcher.sh >>/yedek/orayedek/backup-watcher.log 2>&1 &
 fi
 
-# RHEL6 vb: release cron (dis flock YOK — script kendi kilitini alir)
-if [[ ! -d /run/systemd/system ]] && [[ ! -f /etc/cron.d/yedek-release-update ]]; then
-  printf '%s\n' \
-    'SHELL=/bin/bash' \
-    'PATH=/sbin:/bin:/usr/sbin:/usr/bin' \
-    '*/2 * * * * root /yedek/config/release-updater.sh >>/var/log/yedek-release-update.log 2>&1' \
-    >/etc/cron.d/yedek-release-update
-  chmod 644 /etc/cron.d/yedek-release-update
-  log "cron.d/yedek-release-update yazildi"
+# RHEL6 / fake-systemctl: kalici cron + watcher
+if [[ -f "$ROOT/scripts/ensure-release-host.sh" ]]; then
+  install -m 755 "$ROOT/scripts/ensure-release-host.sh" /yedek/config/ensure-release-host.sh
+  bash /yedek/config/ensure-release-host.sh || log "ensure-release-host uyari"
 fi
 
 log "kuruldu ($(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo local))"
