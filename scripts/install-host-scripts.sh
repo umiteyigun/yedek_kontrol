@@ -24,6 +24,7 @@ mkdir -p /yedek/config /yedek/config/terminal-bin
 install -m 755 "$ROOT/scripts/yedek.sh" /usr/bin/yedek.sh
 ln -sfn /usr/bin/yedek.sh /usr/bin/yedek2.sh
 
+install -m 755 "$ROOT/scripts/ftp-put.py" /yedek/config/ftp-put.py
 install -m 755 "$ROOT/scripts/run-backup.sh" /yedek/config/run-backup.sh
 install -m 755 "$ROOT/scripts/backup-watcher.sh" /yedek/config/backup-watcher.sh
 install -m 755 "$ROOT/scripts/oracle-probe.sh" /yedek/config/oracle-probe.sh
@@ -73,12 +74,13 @@ install -m 755 "$ROOT/scripts/install-host-scripts.sh" /yedek/config/install-hos
 # release-updater hostta kalici kopya (image deploy sonrasi da guncellenir)
 mkdir -p /opt/yedek_kontrol/scripts
 if [[ -f "$ROOT/scripts/release-updater.sh" ]]; then
-  if [[ "$ROOT/scripts/release-updater.sh" != "/opt/yedek_kontrol/scripts/release-updater.sh" ]]; then
-    install -m 755 "$ROOT/scripts/release-updater.sh" /opt/yedek_kontrol/scripts/release-updater.sh
-  else
-    chmod 755 /opt/yedek_kontrol/scripts/release-updater.sh
-  fi
+  install -m 755 "$ROOT/scripts/release-updater.sh" /opt/yedek_kontrol/scripts/release-updater.sh
   install -m 755 "$ROOT/scripts/release-updater.sh" /yedek/config/release-updater.sh
+fi
+
+# backup-watcher bash process eski scripti bellekte tutar; yeniyi yukle
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl restart yedek-backup-watcher.service 2>/dev/null || true
 fi
 
 log "kuruldu ($(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo local))"

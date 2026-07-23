@@ -43,9 +43,23 @@ FTP_TARGET="${FTP_TARGET:-primary}"
 [[ -n "$yedektipi" ]] || die "Kullanim: yedek.sh GUNLUK|HAFTALIK [instance_id]"
 [[ "$yedektipi" == "GUNLUK" || "$yedektipi" == "HAFTALIK" ]] || die "Gecersiz tip: ${yedektipi}"
 
+_ftp_python() {
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s\n' python3
+    return 0
+  fi
+  if command -v python >/dev/null 2>&1; then
+    printf '%s\n' python
+    return 0
+  fi
+  return 1
+}
+
 sendftpfile() {
   local server="$1" user="$2" pass="$3" ftplog="$4" src="$5" target="$6" remote_dir="${7:-/}"
-  local ftp_cd=""
+  local helper="${CONFIG_DIR}/ftp-put.py"
+  local py=""
+  local rc=1
 
   remote_dir="${remote_dir:-/}"
   remote_dir="${remote_dir// /}"
@@ -56,23 +70,31 @@ sendftpfile() {
   fi
   if [[ "$remote_dir" != "/" ]]; then
     remote_dir="${remote_dir%/}"
-    ftp_cd="cd ${remote_dir}"
   fi
 
-  if ! : >"$ftplog" 2>/dev/null; then
-    ftplog="${CONFIG_DIR}/ftp-upload-$$.log"
+  if [[ -z "$ftplog" ]] || ! : >"$ftplog" 2>/dev/null; then
+    ftplog="${CONFIG_DIR}/ftp-upload.log"
+    : >"$ftplog" 2>/dev/null || ftplog="${CONFIG_DIR}/ftp-upload-$$.log"
     : >"$ftplog" 2>/dev/null || die "FTP log yazilamadi: $ftplog"
   fi
 
-  ftp -v -n "$server" <<END_SCRIPT >"$ftplog" 2>&1
-quote USER ${user}
-quote PASS ${pass}
-binary
-${ftp_cd}
-put ${src} ${target}
-quit
-END_SCRIPT
-  if grep -qE "226 |226-" "$ftplog" 2>/dev/null; then
+  [[ -f "$helper" ]] || die "FTP helper yok: $helper (install-host-scripts.sh)"
+  py="$(_ftp_python)" || die "python/python3 bulunamadi (FTP upload)"
+
+  set +e
+  "$py" "$helper" \
+    --host "$server" \
+    --user "$user" \
+    --password "$pass" \
+    --local "$src" \
+    --remote "$target" \
+    --remote-dir "$remote_dir" \
+    --log "$ftplog"
+  rc=$?
+  set -e
+
+  # 0 = size match; 226 is informational only (logged by helper)
+  if [[ "$rc" -eq 0 ]]; then
     echo "1"
   else
     echo "0"
