@@ -598,7 +598,7 @@
           } else if (entry.protected) {
             const badge = document.createElement('span');
             badge.className = 'ftp-protected-badge';
-            badge.title = 'Dosya tarihine gore son ' + ((analysis && analysis.protected_count) || 5) + ' yedek korunuyor';
+            badge.title = 'Dolu son ' + ((analysis && analysis.protected_count) || 5) + ' yedek korunuyor (0 byte / eksik haric)';
             badge.textContent = 'Korunuyor';
             selectCell.appendChild(badge);
           } else if (entry.deletable) {
@@ -725,7 +725,7 @@
       }).length;
       let statusText = ftpState.entries.length + ' oge · dosya tarihine gore (eski ustte)';
       if (backupCount) {
-        statusText += ' · tarihe gore son ' + ((data.analysis && data.analysis.protected_count) || 5) + ' yedek korunuyor';
+        statusText += ' · dolu son ' + ((data.analysis && data.analysis.protected_count) || 5) + ' yedek korunuyor (0/eksik haric)';
       }
       if (ftpState.deleteMode) {
         statusText += ' · silme modu aktif';
@@ -840,7 +840,7 @@
         return;
       }
       setFtpDeleteMode(true);
-      ftpStatus.textContent = 'Silme modu: boyutu 0 otomatik secilir · dosya tarihine gore son 5 yedek korunur';
+      ftpStatus.textContent = 'Silme modu: boyutu 0 / eksik yedek otomatik secilir · dolu son 5 yedek korunur';
       ftpStatus.className = 'ftp-browser-status ok';
     });
   }

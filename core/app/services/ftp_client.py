@@ -239,8 +239,16 @@ def _enrich_entries(entries: list[FtpEntry], margin_pct: int) -> tuple[list[dict
             latest_size = entry.size
             break
 
-    protected_names = {entry.name for entry, _ in dated_backups[:PROTECTED_NEWEST_COUNT]}
     threshold = int(latest_size * max(0.05, 1 - margin_pct / 100)) if latest_size > 0 else 0
+
+    # Son N korumasi: sadece dolu / makul boyuttaki yedekler.
+    # 0 byte veya esik alti (yarim FTP / Ftp=0) dosyalar korunmaz, silinebilir.
+    dated_protectable = [
+        (entry, ts)
+        for entry, ts in dated_backups
+        if entry.size > 0 and (threshold == 0 or entry.size >= threshold)
+    ]
+    protected_names = {entry.name for entry, _ in dated_protectable[:PROTECTED_NEWEST_COUNT]}
 
     dirs: list[dict[str, object]] = []
     files: list[dict[str, object]] = []
@@ -266,7 +274,7 @@ def _enrich_entries(entries: list[FtpEntry], margin_pct: int) -> tuple[list[dict
             "protected": protected,
             "zero_size": zero_size,
             "suspicious": suspicious,
-            "auto_delete": zero_size,
+            "auto_delete": zero_size or suspicious,
             "deletable": entry.entry_type == "file" and not protected,
         }
         if entry.entry_type == "dir":
