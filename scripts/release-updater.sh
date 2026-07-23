@@ -486,19 +486,31 @@ EOF
     return 1
   fi
 
-  local watcher_active=1
-  if command -v systemctl >/dev/null 2>&1; then
-    systemctl is-active --quiet yedek-backup-watcher.service || watcher_active=0
-  elif command -v service >/dev/null 2>&1; then
-    service yedek-backup-watcher status >/dev/null 2>&1 || watcher_active=0
-  elif pgrep -f '/yedek/config/backup-watcher.sh' >/dev/null 2>&1; then
-    watcher_active=1
-  else
-    watcher_active=0
-  fi
-  if [[ "$watcher_active" != "1" ]]; then
-    echo "[$(ts)] ${phase}: backup watcher inactive tag=${tag}" >&2
-    return 1
+  # Watcher: once process varligi (systemd stub/RHEL6 yaniltmasin)
+  ensure_backup_watcher() {
+    if pgrep -f '/yedek/config/backup-watcher\.sh' >/dev/null 2>&1; then
+      return 0
+    fi
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl start yedek-backup-watcher.service 2>/dev/null || true
+      systemctl restart yedek-backup-watcher.service 2>/dev/null || true
+      sleep 1
+      if pgrep -f '/yedek/config/backup-watcher\.sh' >/dev/null 2>&1; then
+        return 0
+      fi
+    fi
+    # SysV / fake-systemctl / cron host: dogrudan nohup
+    if [[ -x /yedek/config/backup-watcher.sh ]]; then
+      nohup /yedek/config/backup-watcher.sh >>/yedek/orayedek/backup-watcher.log 2>&1 &
+      sleep 1
+    fi
+    pgrep -f '/yedek/config/backup-watcher\.sh' >/dev/null 2>&1
+  }
+
+  if ! ensure_backup_watcher; then
+    echo "[$(ts)] ${phase}: backup watcher inactive tag=${tag} (uyari — health OK, devam)" >&2
+    # Eski davranis deploy'u fail ediyordu; Tavsanli gibi hostlarda false-negative.
+    # Health gectiyse release basarili say; watcher'i cron/nohup ile ayaga kaldir.
   fi
 
   write_applied_compose_fp "$(compose_fingerprint)"

@@ -82,5 +82,27 @@ fi
 if command -v systemctl >/dev/null 2>&1; then
   systemctl restart yedek-backup-watcher.service 2>/dev/null || true
 fi
+# systemd yok / fake systemctl / unit yoksa process ile garanti et
+if ! pgrep -f '/yedek/config/backup-watcher\.sh' >/dev/null 2>&1; then
+  mkdir -p /yedek/orayedek
+  nohup /yedek/config/backup-watcher.sh >>/yedek/orayedek/backup-watcher.log 2>&1 &
+  log "backup-watcher nohup ile baslatildi"
+else
+  # eski process'i yenile
+  pkill -f '/yedek/config/backup-watcher\.sh' 2>/dev/null || true
+  sleep 1
+  nohup /yedek/config/backup-watcher.sh >>/yedek/orayedek/backup-watcher.log 2>&1 &
+fi
+
+# RHEL6 vb: release cron (dis flock YOK — script kendi kilitini alir)
+if [[ ! -d /run/systemd/system ]] && [[ ! -f /etc/cron.d/yedek-release-update ]]; then
+  printf '%s\n' \
+    'SHELL=/bin/bash' \
+    'PATH=/sbin:/bin:/usr/sbin:/usr/bin' \
+    '*/2 * * * * root /yedek/config/release-updater.sh >>/var/log/yedek-release-update.log 2>&1' \
+    >/etc/cron.d/yedek-release-update
+  chmod 644 /etc/cron.d/yedek-release-update
+  log "cron.d/yedek-release-update yazildi"
+fi
 
 log "kuruldu ($(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo local))"
