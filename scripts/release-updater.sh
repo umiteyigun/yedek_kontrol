@@ -217,22 +217,31 @@ unlock_track_latest() {
 }
 
 [[ "$RELEASE_UPDATER_ENABLED" == "1" ]] || exit 0
-TARGET_TAG="$(resolve_target_tag)"
-[[ -n "$TARGET_TAG" ]] || exit 0
 [[ -d "$ROOT" ]] || exit 1
 
+# Kilit ONCE alinir. Cron'da `flock LOCK release-updater.sh` varsa child flock -n
+# basarisiz olur (cift kilit) — parent flock bizi zaten tek runner yapar, devam et.
 exec 9>"$LOCK_FILE"
 if [[ -n "$FORCE_TAG" ]]; then
-  # Hub/manuel: kilitli cron bitsin diye bekle
   if ! flock -w 600 9; then
     echo "[$(ts)] release-updater: lock timeout (FORCE_TAG=$FORCE_TAG)" >&2
     exit 1
   fi
-else
-  if ! flock -n 9; then
+elif [[ -n "${YEDEK_RELEASE_LOCK_HELD:-}" ]]; then
+  : # cron: flock ... env YEDEK_RELEASE_LOCK_HELD=1 release-updater.sh
+elif ! flock -n 9; then
+  ppcmd="$(ps -o args= -p "${PPID:-0}" 2>/dev/null || true)"
+  if [[ "$ppcmd" == *flock* && ( "$ppcmd" == *yedek-release-update* || "$ppcmd" == *release-updater* ) ]]; then
+    echo "[$(ts)] release-updater: lock held by parent flock; continuing" >&2
+  else
+    echo "[$(ts)] release-updater: skip (lock busy)" >&2
     exit 0
   fi
 fi
+
+TARGET_TAG="$(resolve_target_tag)"
+[[ -n "$TARGET_TAG" ]] || exit 0
+echo "[$(ts)] target=${TARGET_TAG} track=${RELEASE_TRACK:-pin} force=${FORCE_TAG:-}"
 
 compose() {
   if docker compose version >/dev/null 2>&1; then
@@ -527,6 +536,7 @@ if [[ "$PREV_TAG" == "$TARGET_TAG" ]]; then
     exit 0
   fi
   write_state "ok" "Ayni release zaten calisiyor" "$PREV_TAG" "$TARGET_TAG"
+  echo "[$(ts)] Ayni release zaten calisiyor (tag=${TARGET_TAG})"
   exit 0
 fi
 
