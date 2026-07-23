@@ -7,6 +7,7 @@ RUN_LOG=""
 STATUS_FILE=""
 BACKUP_STATUS_FILE=""
 FTP_STALE_SEC="${FTP_STALE_SEC:-10800}"
+NOTIFY_STALE_SEC="${NOTIFY_STALE_SEC:-900}"
 
 # shellcheck source=/dev/null
 source /yedek/config/backup-status-lib.sh
@@ -44,6 +45,7 @@ age = int((datetime.now() - started).total_seconds())
 if age < lim:
     sys.exit(0)
 d["state"] = "failed"
+d["stage"] = "failed"
 d["exit_code"] = 1
 d["reason"] = "stale FTP status cleared by run-backup (age=%ss)" % age
 d["updated_at"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
@@ -55,7 +57,52 @@ print("cleared stale ftp status age=%s" % age)
 PY
   rm -f /yedek/config/ftp-upload.state 2>/dev/null || true
 }
+
+_clear_stale_notify_status() {
+  local sf="${YEDEK_DIR}/.backup-status.json"
+  local py=""
+  if command -v python3 >/dev/null 2>&1; then
+    py=python3
+  elif command -v python >/dev/null 2>&1; then
+    py=python
+  else
+    return 0
+  fi
+  [[ -f "$sf" ]] || return 0
+  "$py" - "$sf" "$NOTIFY_STALE_SEC" <<'PY' || true
+from __future__ import print_function
+import json, sys, os
+from datetime import datetime
+path, lim = sys.argv[1], int(sys.argv[2])
+try:
+    d = json.load(open(path))
+except Exception:
+    sys.exit(0)
+if d.get("state") != "running" or d.get("stage") != "notifying":
+    sys.exit(0)
+raw = str(d.get("stage_started_at") or d.get("started_at") or "")[:19]
+try:
+    started = datetime.strptime(raw, "%Y-%m-%dT%H:%M:%S")
+except Exception:
+    sys.exit(0)
+age = int((datetime.now() - started).total_seconds())
+if age < lim:
+    sys.exit(0)
+d["state"] = "done"
+d["stage"] = "done"
+d["exit_code"] = 0
+d["reason"] = "stale notify status cleared by run-backup (age=%ss)" % age
+d["updated_at"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+tmp = path + ".tmp"
+with open(tmp, "w") as fh:
+    json.dump(d, fh)
+os.rename(tmp, path)
+print("cleared stale notify status age=%s" % age)
+PY
+}
+
 _clear_stale_ftp_status
+_clear_stale_notify_status
 
 
 resolve_instance_backup_dir() {

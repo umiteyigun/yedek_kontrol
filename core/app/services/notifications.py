@@ -53,12 +53,14 @@ class NotificationService:
         return list(reversed(self._load()[-limit:]))
 
     async def forward_remote(self, remote_url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """kurumsalapi iletimi — yedek kilidini bloklamamak icin kisa timeout."""
         if not remote_url:
             return {"forwarded": False, "reason": "remote_api_url bos"}
 
         remote_payload = {k: payload[k] for k in REMOTE_PARAMS if k in payload and payload[k] != ""}
+        timeout = httpx.Timeout(8.0, connect=4.0)
         try:
-            async with httpx.AsyncClient(timeout=20) as client:
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.get(remote_url, params=remote_payload)
             logger.info("Merkezi API yaniti: %s %s", response.status_code, remote_url)
             return {
@@ -66,7 +68,7 @@ class NotificationService:
                 "status_code": response.status_code,
                 "url": remote_url,
             }
-        except httpx.HTTPError as exc:
+        except Exception as exc:  # noqa: BLE001 — bildirim asla yedegi kilitlemesin
             logger.warning("Merkezi API hatasi: %s", exc)
             return {"forwarded": False, "reason": str(exc)}
 

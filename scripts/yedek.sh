@@ -268,21 +268,31 @@ notify_backup() {
   local disk_report_script="${CONFIG_DIR}/disk-report.sh"
 
   if [[ -x "$disk_report_script" ]]; then
+    # df NFS'te takilmasin — hard timeout
     # shellcheck disable=SC2046
-    eval "$("$disk_report_script" "${directorydizini}")"
+    if command -v timeout >/dev/null 2>&1; then
+      eval "$(timeout 8 "$disk_report_script" "${directorydizini}" 2>/dev/null || true)"
+    else
+      eval "$("$disk_report_script" "${directorydizini}" 2>/dev/null || true)"
+    fi
     disk1=${DiskAlani1:-${disk1:-0%}}
     disk2=${DiskAlani2:-${disk2:-0}}
     disk3=${DiskAlani3:-${disk3:-0}}
   else
-    disk1=$(df -h / 2>/dev/null | awk 'NR==2 {print $5}')
+    if command -v timeout >/dev/null 2>&1; then
+      disk1=$(timeout 5 df -h / 2>/dev/null | awk 'NR==2 {print $5}')
+    else
+      disk1=$(df -h / 2>/dev/null | awk 'NR==2 {print $5}')
+    fi
     disk1=${disk1:-0%}
     disk2=0
     disk3=0
   fi
 
-  disip=$(curl -sf --max-time 8 ifconfig.co 2>/dev/null || true)
+  # Dis IP opsiyonel — bildirim asla burada uzun beklememeli
+  disip=$(curl -sf --connect-timeout 2 --max-time 3 ifconfig.co 2>/dev/null || true)
   if [[ -z "$disip" ]]; then
-    disip=$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null || true)
+    disip=$(curl -sf --connect-timeout 2 --max-time 3 https://api.ipify.org 2>/dev/null || true)
   fi
   if [[ -z "$disip" ]]; then
     disip=$(hostname -I 2>/dev/null | awk '{print $1}')
@@ -290,11 +300,12 @@ notify_backup() {
   disip=${disip:-0.0.0.0}
 
   log "API bildirimi [${INSTANCE_ID}]: ${api_url}"
+  # Local core hizli cevap vermeli (remote arka planda); yine de hard cap
   http_code=$(curl -sS -G "$api_url" \
     -w "%{http_code}" \
     -o "$resp_file" \
-    --connect-timeout 10 \
-    --max-time 30 \
+    --connect-timeout 3 \
+    --max-time 15 \
     --data-urlencode "GuidKey=${guid_key}" \
     --data-urlencode "YedekKodu=${yedek_kodu}" \
     --data-urlencode "KurumNo=${kurumkodu}" \

@@ -205,6 +205,10 @@ elif action == "finish":
     data["state"] = state
     data["exit_code"] = exit_code
     data["updated_at"] = now
+    # Hub'da "Bildirim"de kalmasin — bitti ise stage=done
+    if state in ("done", "failed", "skipped"):
+        data["stage"] = state
+        data["stage_started_at"] = now
     started = parse_ts(data.get("started_at"))
     if started:
         sec = int(timedelta_total_seconds(datetime.now() - started))

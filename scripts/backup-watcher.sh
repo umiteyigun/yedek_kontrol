@@ -5,6 +5,7 @@ TRIGGER="/yedek/config/backup.trigger"
 LOCK="/yedek/orayedek/.backup-running"
 WATCH_LOG="/yedek/orayedek/backup-watcher.log"
 FTP_STALE_SEC="${FTP_STALE_SEC:-10800}"
+NOTIFY_STALE_SEC="${NOTIFY_STALE_SEC:-900}"
 FTP_STATE="/yedek/config/ftp-upload.state"
 FTP_HELPER="/yedek/config/ftp-put.py"
 STATUS_DEFAULT="/yedek/orayedek/.backup-status.json"
@@ -257,12 +258,55 @@ PY
   return 0
 }
 
+reclaim_stale_notify_lock() {
+  # Bildirim asamasinda takilan kilit — FTP reclaim bunu kapsamiyordu.
+  [[ -f "$LOCK" ]] || return 0
+
+  local sf stage age state lock_age=0 stale_age
+  sf="$(_resolve_status_file)"
+  state="$(_status_field "$sf" state 2>/dev/null || true)"
+  stage="$(_status_field "$sf" stage 2>/dev/null || true)"
+  age="$(_status_age_sec "$sf" 2>/dev/null || echo -1)"
+
+  if [[ "${state:-}" != "running" || "${stage:-}" != "notifying" ]]; then
+    return 1
+  fi
+
+  if [[ -f "$LOCK" ]]; then
+    lock_age=$(( $(date +%s) - $(stat -c %Y "$LOCK" 2>/dev/null || echo 0) ))
+  fi
+
+  stale_age="$age"
+  if [[ "$stale_age" -lt 0 ]] 2>/dev/null; then
+    stale_age="$lock_age"
+  fi
+  if [[ "$lock_age" -gt "$stale_age" ]]; then
+    stale_age="$lock_age"
+  fi
+
+  if [[ "$stale_age" -lt "$NOTIFY_STALE_SEC" ]]; then
+    return 1
+  fi
+
+  _wlog "stale notify reclaim: age=${stale_age}s threshold=${NOTIFY_STALE_SEC}s status=${sf}"
+
+  # Takili bildirim / curl / disk-report sureclerini temizle
+  pkill -f '/usr/bin/yedek\.sh' 2>/dev/null || true
+  pkill -f 'disk-report\.sh' 2>/dev/null || true
+
+  # Yedek dosyasi zaten alinmis; bildirimi timeout say, kilidi ac
+  _finish_status "$sf" done "stale notify reclaim: local backup ok, API notify stuck/timeout"
+  rm -f "$LOCK" 2>/dev/null || true
+  _wlog "stale notify reclaim: done, lock cleared"
+  return 0
+}
+
 while true; do
   if [ -f "$TRIGGER" ]; then
     TIP="$(tr -d '[:space:]' <"$TRIGGER")"
     rm -f "$TRIGGER"
     if [ -f "$LOCK" ]; then
-      if reclaim_stale_ftp_lock; then
+      if reclaim_stale_ftp_lock || reclaim_stale_notify_lock; then
         _wlog "stale lock reclaimed; continuing tip=$TIP"
       else
         _wlog "atlandi: zaten calisiyor"
@@ -283,6 +327,9 @@ while true; do
     fi
     "$RUNNER" "$TIP" || true
     rm -f "$LOCK"
+  elif [ -f "$LOCK" ]; then
+    # Trigger yokken de orphan bildirim/FTP kilidini ac
+    reclaim_stale_ftp_lock || reclaim_stale_notify_lock || true
   fi
   sleep 2
 done

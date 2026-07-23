@@ -2,7 +2,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Query, Request
 
 from app.auth import get_current_user
 from app.services.server_time import collect_host_clock
@@ -82,6 +82,7 @@ def list_notifications(request: Request, limit: int = 20):
 @router.get("/api/YedekYonetimi/YedekBildirimi")
 async def yedek_bildirimi(
     request: Request,
+    background_tasks: BackgroundTasks,
     GuidKey: str = Query(""),
     YedekKodu: str = Query(""),
     KurumNo: str = Query(""),
@@ -101,7 +102,7 @@ async def yedek_bildirimi(
     YedekTipi: str = Query(""),
     DosyaAdi: str = Query(""),
 ):
-    """yedek.sh curl cagrisi + merkezi API iletimi."""
+    """yedek.sh curl cagrisi + merkezi API iletimi (remote arka planda)."""
     store = request.app.state.store
     settings = store.get()
     yedek_dir = Path(request.app.state.yedek_dir)
@@ -112,8 +113,16 @@ async def yedek_bildirimi(
         if archive and archive.exists():
             YedekBoyutu = str(archive.stat().st_size)
         else:
-            backups = sorted(yedek_dir.glob("*.dmp.gz"), key=lambda p: p.stat().st_mtime, reverse=True)
-            YedekBoyutu = str(backups[0].stat().st_size) if backups else "-1"
+            # Glob NFS'te takilmasin — sadece boyut yoksa ve DosyaAdi yoksa
+            try:
+                backups = sorted(
+                    yedek_dir.glob("*.dmp.gz"),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
+                YedekBoyutu = str(backups[0].stat().st_size) if backups else "-1"
+            except OSError:
+                YedekBoyutu = "-1"
 
     backup_mount_path = str(yedek_dir)
     if DosyaAdi:
@@ -123,7 +132,15 @@ async def yedek_bildirimi(
         if inst_match:
             backup_mount_path = inst_match.effective_directorydizini(settings.yedek_dir)
 
-    disks = collect_disk_areas(backup_mount_path)
+    # Disk alanlari yedek.sh'den geliyorsa tekrar df yapma (NFS hang riski)
+    if DiskAlani1:
+        disks = {
+            "DiskAlani1": DiskAlani1,
+            "DiskAlani2": DiskAlani2 if DiskAlani2 not in ("",) else "0",
+            "DiskAlani3": DiskAlani3 if DiskAlani3 not in ("",) else "0",
+        }
+    else:
+        disks = collect_disk_areas(backup_mount_path)
 
     payload = build_payload(
         settings,
@@ -155,6 +172,13 @@ async def yedek_bildirimi(
 
     payload["config_version"] = store.version
     entry = notifications.record(payload)
-    forward = await notifications.forward_remote(settings.remote_api_url, payload)
+
+    # Yerel kayit hemen bitsin; kurumsalapi yedek kilidini tutmasin
+    remote_url = settings.remote_api_url or ""
+    if remote_url:
+        background_tasks.add_task(notifications.forward_remote, remote_url, dict(payload))
+        forward = {"forwarded": True, "queued": True, "url": remote_url}
+    else:
+        forward = {"forwarded": False, "reason": "remote_api_url bos"}
 
     return {"ok": True, "data": entry, "remote": forward}
