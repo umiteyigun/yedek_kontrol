@@ -108,7 +108,8 @@ _resolve_ftp_credentials() {
   ACTIVE_FTP_PASS=""
   ACTIVE_FTP_DIR="/"
   case "$FTP_TARGET" in
-    none)
+    none|both)
+      # both: tek hedef degil; upload_backup_artifact sirayla primary+secondary cozer
       return 1
       ;;
     secondary)
@@ -129,13 +130,123 @@ _resolve_ftp_credentials() {
   [[ -n "$ACTIVE_FTP_IP" && -n "$ACTIVE_FTP_USER" && -n "$ACTIVE_FTP_PASS" ]]
 }
 
-upload_backup_artifact() {
+# ACTIVE_FTP_* uzerinden tek hedefe yukle (sendftpfile / ftp-put.py — hang-proof SIZE).
+# Globale dokunur: ftp_ok (0/1), total_size, first_name, upload_dosyaadi, filesize
+_upload_to_active_ftp() {
   local artifact_path="$1"
   local remote_name="$2"
+  local label="${3:-FTP}"
   local ftp_ok=1
   local total_size=0
   local first_name=""
 
+  if [[ "${backup_split_enabled:-0}" == "1" ]]; then
+    shopt -s nullglob
+    local parts=( "${artifact_path}.part_"* )
+    shopt -u nullglob
+    if [[ ${#parts[@]} -eq 0 ]]; then
+      log "HATA: ${label} split parca yok: ${artifact_path}.part_*"
+      return 1
+    fi
+    for part in "${parts[@]}"; do
+      local part_name part_stat psz
+      part_name="$(basename "$part")"
+      [[ -z "$first_name" ]] && first_name="$part_name"
+      part_stat=$(sendftpfile \
+        "$ACTIVE_FTP_IP" "$ACTIVE_FTP_USER" "$ACTIVE_FTP_PASS" \
+        "$ftplog2" \
+        "$part" "$part_name" "$ACTIVE_FTP_DIR")
+      [[ "$part_stat" != "1" ]] && ftp_ok=0
+      psz=$(stat -c%s "$part" 2>/dev/null || echo 0)
+      total_size=$((total_size + psz))
+    done
+    upload_dosyaadi="${first_name} (+${#parts[@]} parca)"
+    filesize=$total_size
+    [[ "$ftp_ok" == "1" ]]
+    return $?
+  fi
+
+  local st
+  st=$(sendftpfile \
+    "$ACTIVE_FTP_IP" "$ACTIVE_FTP_USER" "$ACTIVE_FTP_PASS" \
+    "$ftplog2" \
+    "$artifact_path" "$remote_name" "$ACTIVE_FTP_DIR")
+  filesize=$(stat -c%s "$artifact_path" 2>/dev/null || echo "-1")
+  upload_dosyaadi="$remote_name"
+  [[ "$st" == "1" ]]
+}
+
+upload_backup_artifact() {
+  local artifact_path="$1"
+  local remote_name="$2"
+  local saved_target="${FTP_TARGET:-primary}"
+  local ftp_ok=1
+
+  # Split bir kez (both icin de ayni parcalar iki hedefe gider)
+  if [[ "${backup_split_enabled:-0}" == "1" ]]; then
+    shopt -s nullglob
+    local existing=( "${artifact_path}.part_"* )
+    shopt -u nullglob
+    if [[ ${#existing[@]} -eq 0 && -f "$artifact_path" ]]; then
+      local split_mb="${backup_split_size_mb:-2048}"
+      local part_prefix="${artifact_path}.part_"
+      log "Buyuk dosya bolunuyor [${INSTANCE_ID}]: ${split_mb}MB parcalar"
+      split -b "${split_mb}M" -a 3 -d "$artifact_path" "$part_prefix"
+      rm -f "$artifact_path"
+      shopt -s nullglob
+      existing=( "${artifact_path}.part_"* )
+      shopt -u nullglob
+      if [[ ${#existing[@]} -eq 0 ]]; then
+        die "Split basarisiz: ${artifact_path}"
+      fi
+    fi
+  fi
+
+  if [[ "$saved_target" == "both" ]]; then
+    local ok1=0 ok2=0
+    FTP_TARGET=primary
+    if _resolve_ftp_credentials; then
+      log "FTP-1 yukleniyor [${INSTANCE_ID}]: ${ACTIVE_FTP_IP}:${ACTIVE_FTP_DIR:-/} -> ${remote_name}"
+      if _upload_to_active_ftp "$artifact_path" "$remote_name" "FTP-1"; then
+        ok1=1
+        log "FTP-1 OK [${INSTANCE_ID}]"
+      else
+        log "FTP-1 BASARISIZ [${INSTANCE_ID}]"
+      fi
+    else
+      log "FTP-1 atlandi [${INSTANCE_ID}]: kapali veya kimlik bilgisi eksik"
+    fi
+    FTP_TARGET=secondary
+    if _resolve_ftp_credentials; then
+      log "FTP-2 yukleniyor [${INSTANCE_ID}]: ${ACTIVE_FTP_IP}:${ACTIVE_FTP_DIR:-/} -> ${remote_name}"
+      if _upload_to_active_ftp "$artifact_path" "$remote_name" "FTP-2"; then
+        ok2=1
+        log "FTP-2 OK [${INSTANCE_ID}]"
+      else
+        log "FTP-2 BASARISIZ [${INSTANCE_ID}]"
+      fi
+    else
+      log "FTP-2 atlandi [${INSTANCE_ID}]: kapali veya kimlik bilgisi eksik"
+    fi
+    FTP_TARGET="$saved_target"
+    if [[ "$ok1" == "1" && "$ok2" == "1" ]]; then
+      localftpstat="1"
+    else
+      localftpstat="0"
+    fi
+    if [[ -z "${filesize:-}" || "$filesize" == "-1" ]]; then
+      if [[ -f "$artifact_path" ]]; then
+        filesize=$(stat -c%s "$artifact_path" 2>/dev/null || echo "-1")
+      else
+        filesize="${filesize:--1}"
+      fi
+    fi
+    upload_dosyaadi="${upload_dosyaadi:-$remote_name}"
+    log "FTP both ozet [${INSTANCE_ID}]: ftp1=${ok1} ftp2=${ok2} Ftp=${localftpstat}"
+    return 0
+  fi
+
+  FTP_TARGET="$saved_target"
   if ! _resolve_ftp_credentials; then
     localftpstat=""
     filesize=$(stat -c%s "$artifact_path" 2>/dev/null || echo "-1")
@@ -143,48 +254,11 @@ upload_backup_artifact() {
     return 0
   fi
 
-  if [[ "${backup_split_enabled:-0}" == "1" ]]; then
-    local split_mb="${backup_split_size_mb:-2048}"
-    local part_prefix="${artifact_path}.part_"
-    log "Buyuk dosya bolunuyor [${INSTANCE_ID}]: ${split_mb}MB parcalar"
-    split -b "${split_mb}M" -a 3 -d "$artifact_path" "$part_prefix"
-    rm -f "$artifact_path"
-    shopt -s nullglob
-    local parts=( "${artifact_path}.part_"* )
-    shopt -u nullglob
-    if [[ ${#parts[@]} -eq 0 ]]; then
-      die "Split basarisiz: ${artifact_path}"
-    fi
-    for part in "${parts[@]}"; do
-      local part_name
-      part_name="$(basename "$part")"
-      [[ -z "$first_name" ]] && first_name="$part_name"
-      local part_stat
-      part_stat=$(sendftpfile \
-        "$ACTIVE_FTP_IP" "$ACTIVE_FTP_USER" "$ACTIVE_FTP_PASS" \
-        "$ftplog2" \
-        "$part" "$part_name" "$ACTIVE_FTP_DIR")
-      [[ "$part_stat" != "1" ]] && ftp_ok=0
-      local psz
-      psz=$(stat -c%s "$part" 2>/dev/null || echo 0)
-      total_size=$((total_size + psz))
-    done
-    upload_dosyaadi="${first_name} (+${#parts[@]} parca)"
-    filesize=$total_size
-    if [[ "$ftp_ok" == "1" ]]; then
-      localftpstat="1"
-    else
-      localftpstat="0"
-    fi
-    return 0
+  if _upload_to_active_ftp "$artifact_path" "$remote_name" "FTP"; then
+    localftpstat="1"
+  else
+    localftpstat="0"
   fi
-
-  localftpstat=$(sendftpfile \
-    "$ACTIVE_FTP_IP" "$ACTIVE_FTP_USER" "$ACTIVE_FTP_PASS" \
-    "$ftplog2" \
-    "$artifact_path" "$remote_name" "$ACTIVE_FTP_DIR")
-  filesize=$(stat -c%s "$artifact_path" 2>/dev/null || echo "-1")
-  upload_dosyaadi="$remote_name"
 }
 
 notify_backup() {
@@ -388,7 +462,11 @@ SELECT username, expiry_date FROM dba_users
 EXIT;
 EOF
 
-  if _resolve_ftp_credentials; then
+  if [[ "${FTP_TARGET:-primary}" == "both" ]]; then
+    bs_stage_if_available ftp_upload
+    log "FTP yukleniyor [${INSTANCE_ID}]: hedef=both (FTP-1 sonra FTP-2) -> ${uploaddosyaadi}"
+    upload_backup_artifact "$artifact_path" "$uploaddosyaadi"
+  elif _resolve_ftp_credentials; then
     bs_stage_if_available ftp_upload
     log "FTP yukleniyor [${INSTANCE_ID}]: hedef=${FTP_TARGET} ${ACTIVE_FTP_IP}:${ACTIVE_FTP_DIR:-/} -> ${uploaddosyaadi}"
     upload_backup_artifact "$artifact_path" "$uploaddosyaadi"

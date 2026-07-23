@@ -232,6 +232,11 @@ def _validate_instance(inst: dict[str, Any]) -> list[str]:
             errors.append(f"{label}: zamanlama '{rule.get('id', '?')}' FTP-2 secili ama ikincil FTP kapali")
         if target == "primary" and not inst.get("ftp_upload_enabled"):
             errors.append(f"{label}: zamanlama '{rule.get('id', '?')}' FTP-1 secili ama birincil FTP kapali")
+        if target == "both":
+            if not inst.get("ftp_upload_enabled"):
+                errors.append(f"{label}: zamanlama '{rule.get('id', '?')}' FTP-1+FTP-2 secili ama birincil FTP kapali")
+            if not inst.get("ftp2_upload_enabled"):
+                errors.append(f"{label}: zamanlama '{rule.get('id', '?')}' FTP-1+FTP-2 secili ama ikincil FTP kapali")
     mode = str(inst.get("backup_protect_mode", "gzip")).lower()
     if mode in {"oracle", "zip"} and not str(inst.get("backup_protect_pass", "")).strip():
         errors.append(f"{label}: yedek koruma sifresi zorunlu ({mode})")
@@ -314,8 +319,8 @@ def _parse_schedule_form(form) -> BackupScheduleRule:
     label = str(form.get("label", "")).strip()
     rule_id = str(form.get("rule_id", "")).strip()
     ftp_target = str(form.get("ftp_target", "primary")).strip().lower()
-    if ftp_target not in {"primary", "secondary", "none"}:
-        raise ValueError("FTP hedefi primary, secondary veya none olmali")
+    if ftp_target not in {"primary", "secondary", "none", "both"}:
+        raise ValueError("FTP hedefi primary, secondary, none veya both olmali")
 
     if not rule_id:
         rule_id = slugify(f"{backup_type}-{time_value}")

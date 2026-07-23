@@ -90,7 +90,7 @@ class BackupScheduleRule(BaseModel):
     time: str = "02:00"
     day_of_week: int | None = None
     label: str = ""
-    ftp_target: Literal["primary", "secondary", "none"] = "primary"
+    ftp_target: Literal["primary", "secondary", "none", "both"] = "primary"
 
     @field_validator("id")
     @classmethod
@@ -148,6 +148,7 @@ class BackupScheduleRule(BaseModel):
             "primary": "FTP-1 (birincil)",
             "secondary": "FTP-2 (ikincil)",
             "none": "FTP yok",
+            "both": "FTP-1 + FTP-2 (sirayla)",
         }
         return labels.get(self.ftp_target, "FTP-1 (birincil)")
 

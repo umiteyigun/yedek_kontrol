@@ -228,7 +228,7 @@
               </div>
 
               <div class="ftp-section-toolbar full">
-                <p class="form-hint ftp-section-hint">Uzak sunucuya yedek yukleme — zamanlamada FTP-1 veya FTP-2 secilir</p>
+                <p class="form-hint ftp-section-hint">Uzak sunucuya yedek yukleme — zamanlamada FTP-1, FTP-2 veya ikisi (sirayla) secilir</p>
                 <button
                   type="button"
                   class="btn-ghost btn-sm btn-ftp-browse"
@@ -535,6 +535,7 @@
             <select name="ftp_target" id="schedule-ftp-target">
               <option value="primary">FTP-1 (birincil / yerel)</option>
               <option value="secondary">FTP-2 (ikincil / merkez)</option>
+              <option value="both">FTP-1 + FTP-2 (sirayla ayni yedek)</option>
               <option value="none">FTP yok (yalnizca yerel disk)</option>
             </select>
           </label>

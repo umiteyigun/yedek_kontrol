@@ -369,7 +369,7 @@ def queue_backup(
         raise ValueError("Tip GUNLUK veya HAFTALIK olmali")
     if instance_id and not re.fullmatch(r"[a-z0-9\-]+", instance_id):
         raise ValueError("Gecersiz instance id")
-    if ftp_target not in {"primary", "secondary", "none"}:
+    if ftp_target not in {"primary", "secondary", "none", "both"}:
         raise ValueError("Gecersiz FTP hedefi")
     if instance_id:
         payload = f"{tip}:{instance_id}:{ftp_target}"
