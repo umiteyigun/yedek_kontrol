@@ -52,7 +52,7 @@ log "cron.d/yedek-release-update yazildi (flock yok)"
 cat >"$CRON_WATCH" <<'EOF'
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
-*/5 * * * * root pgrep -f '/yedek/config/backup-watcher\.sh' >/dev/null 2>&1 || nohup /yedek/config/backup-watcher.sh >>/yedek/orayedek/backup-watcher.log 2>&1 &
+*/5 * * * * root pgrep -f '/yedek/config/backup-watcher\.sh' >/dev/null 2>&1 || nohup /yedek/config/backup-watcher.sh >>/yedek/orayedek/backup-watcher.log 2>&1 9>&- &
 EOF
 chmod 644 "$CRON_WATCH"
 log "cron.d/yedek-backup-watcher keep-alive yazildi"
@@ -60,7 +60,7 @@ log "cron.d/yedek-backup-watcher keep-alive yazildi"
 # --- watcher simdi ---
 if [[ -x "$WATCH" ]]; then
   if ! pgrep -f '/yedek/config/backup-watcher\.sh' >/dev/null 2>&1; then
-    nohup "$WATCH" >>"$LOG_WATCH" 2>&1 &
+    nohup "$WATCH" >>"$LOG_WATCH" 2>&1 9>&- &
     log "backup-watcher baslatildi pid=$!"
   else
     log "backup-watcher zaten calisiyor"

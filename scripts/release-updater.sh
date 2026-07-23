@@ -223,11 +223,23 @@ unlock_track_latest() {
 
 # Kilit ONCE alinir. Cron'da `flock LOCK release-updater.sh` varsa child flock -n
 # basarisiz olur (cift kilit) — parent flock bizi zaten tek runner yapar, devam et.
+# Stale lock: dosya var ama release-updater process yoksa (hung docker pull vb.) temizle.
+if [[ -e "$LOCK_FILE" ]] && ! pgrep -f "/release-updater\.sh|/yedek-release-update" >/dev/null 2>&1; then
+  echo "[$(ts)] release-updater: stale lock reclaim ($LOCK_FILE)" >&2
+  fuser -k "$LOCK_FILE" >/dev/null 2>&1 || true
+  rm -f "$LOCK_FILE"
+fi
 exec 9>"$LOCK_FILE"
 if [[ -n "$FORCE_TAG" ]]; then
-  if ! flock -w 600 9; then
-    echo "[$(ts)] release-updater: lock timeout (FORCE_TAG=$FORCE_TAG)" >&2
-    exit 1
+  if ! flock -w 120 9; then
+    echo "[$(ts)] release-updater: lock busy — force reclaim (FORCE_TAG=$FORCE_TAG)" >&2
+    fuser -k "$LOCK_FILE" >/dev/null 2>&1 || true
+    rm -f "$LOCK_FILE"
+    exec 9>"$LOCK_FILE"
+    if ! flock -w 30 9; then
+      echo "[$(ts)] release-updater: lock timeout (FORCE_TAG=$FORCE_TAG)" >&2
+      exit 1
+    fi
   fi
 elif [[ -n "${YEDEK_RELEASE_LOCK_HELD:-}" ]]; then
   : # cron: flock ... env YEDEK_RELEASE_LOCK_HELD=1 release-updater.sh
@@ -511,7 +523,7 @@ EOF
     fi
     # SysV / fake-systemctl / cron host: dogrudan nohup
     if [[ -x /yedek/config/backup-watcher.sh ]]; then
-      nohup /yedek/config/backup-watcher.sh >>/yedek/orayedek/backup-watcher.log 2>&1 &
+      nohup /yedek/config/backup-watcher.sh >>/yedek/orayedek/backup-watcher.log 2>&1 9>&- &
       sleep 1
     fi
     pgrep -f '/yedek/config/backup-watcher\.sh' >/dev/null 2>&1

@@ -85,13 +85,13 @@ fi
 # systemd yok / fake systemctl / unit yoksa process ile garanti et
 if ! pgrep -f '/yedek/config/backup-watcher\.sh' >/dev/null 2>&1; then
   mkdir -p /yedek/orayedek
-  nohup /yedek/config/backup-watcher.sh >>/yedek/orayedek/backup-watcher.log 2>&1 &
+  nohup /yedek/config/backup-watcher.sh >>/yedek/orayedek/backup-watcher.log 2>&1 9>&- &
   log "backup-watcher nohup ile baslatildi"
 else
   # eski process'i yenile
   pkill -f '/yedek/config/backup-watcher\.sh' 2>/dev/null || true
   sleep 1
-  nohup /yedek/config/backup-watcher.sh >>/yedek/orayedek/backup-watcher.log 2>&1 &
+  nohup /yedek/config/backup-watcher.sh >>/yedek/orayedek/backup-watcher.log 2>&1 9>&- &
 fi
 
 # RHEL6 / fake-systemctl: kalici cron + watcher

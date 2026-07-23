@@ -952,6 +952,7 @@ def _command_release_update(
 
     qtag = shlex.quote(tag)
     # Background job: pull -> bootstrap updater -> unlock track -> deploy
+    # git TLS fail olursa centos fallback; pull tamamen fail ise lokal updater ile devam.
     inner = f"""
 set -euo pipefail
 ENVF=/yedek/config/release-update.env
@@ -959,6 +960,8 @@ CORE_IMG=git.trtek.tr/umiteyigun/yedek_kontrol/yedek-core
 REG_HOST=git.trtek.tr
 REG_USER=oauth2
 REG_TOKEN=
+CENTOS_HOST=centos.trtekyazilim.com
+CENTOS_CORE=centos.trtekyazilim.com/umiteyigun/yedek_kontrol/yedek-core
 if [[ -f "$ENVF" ]]; then
   set +u
   # shellcheck source=/dev/null
@@ -971,27 +974,52 @@ if [[ -f "$ENVF" ]]; then
 fi
 exec >>/var/log/yedek-release-update.log 2>&1
 echo "[$(date '+%F %T')] hub release_update bootstrap tag={tag}"
+# Stale lock / hung pull / orphan compose name temizligi
+fuser -k /var/run/yedek-release-update.lock >/dev/null 2>&1 || true
+rm -f /var/run/yedek-release-update.lock
+pkill -f "docker pull .*yedek-core" >/dev/null 2>&1 || true
+docker ps -a --format "{{{{.ID}}}} {{{{.Names}}}}" | awk '/_yedek-core|_yedek-central/{{print $1}}' | xargs -r docker rm -f >/dev/null 2>&1 || true
 if [[ -n "$REG_TOKEN" ]]; then
   echo "$REG_TOKEN" | docker login "$REG_HOST" -u "$REG_USER" --password-stdin >/dev/null 2>&1 || true
+  echo "$REG_TOKEN" | docker login "$CENTOS_HOST" -u "$REG_USER" --password-stdin >/dev/null 2>&1 || true
 fi
-docker pull "$CORE_IMG:{tag}" >/dev/null
-cid="$(docker create "$CORE_IMG:{tag}")"
-tmpdir="$(mktemp -d /tmp/yedek-relboot.XXXXXX)"
-docker cp "$cid:/opt/host-scripts/scripts/release-updater.sh" "$tmpdir/release-updater.sh"
-docker rm -f "$cid" >/dev/null
-mkdir -p /opt/yedek_kontrol/scripts /yedek/config
-install -m 755 "$tmpdir/release-updater.sh" /opt/yedek_kontrol/scripts/release-updater.sh
-install -m 755 "$tmpdir/release-updater.sh" /yedek/config/release-updater.sh
-rm -rf "$tmpdir"
+BOOT_IMG=""
+if docker pull "$CORE_IMG:{tag}" >/dev/null 2>&1; then
+  BOOT_IMG="$CORE_IMG:{tag}"
+elif docker pull "$CENTOS_CORE:{tag}" >/dev/null 2>&1; then
+  BOOT_IMG="$CENTOS_CORE:{tag}"
+  CORE_IMG="$CENTOS_CORE"
+  REG_HOST="$CENTOS_HOST"
+  echo "[$(date '+%F %T')] bootstrap: centos registry fallback"
+fi
+if [[ -n "$BOOT_IMG" ]]; then
+  cid="$(docker create "$BOOT_IMG")"
+  tmpdir="$(mktemp -d /tmp/yedek-relboot.XXXXXX)"
+  docker cp "$cid:/opt/host-scripts/scripts/release-updater.sh" "$tmpdir/release-updater.sh"
+  docker rm -f "$cid" >/dev/null
+  mkdir -p /opt/yedek_kontrol/scripts /yedek/config
+  install -m 755 "$tmpdir/release-updater.sh" /opt/yedek_kontrol/scripts/release-updater.sh
+  install -m 755 "$tmpdir/release-updater.sh" /yedek/config/release-updater.sh
+  rm -rf "$tmpdir"
+else
+  echo "[$(date '+%F %T')] bootstrap: pull fail — lokal updater ile devam"
+fi
 if [[ -f "$ENVF" ]]; then
   if grep -q "^RELEASE_TRACK=" "$ENVF" 2>/dev/null; then
     sed -i "s/^RELEASE_TRACK=.*/RELEASE_TRACK=latest/" "$ENVF"
   else
     echo "RELEASE_TRACK=latest" >>"$ENVF"
   fi
+  if [[ "$REG_HOST" == "$CENTOS_HOST" ]]; then
+    grep -q "^RELEASE_REGISTRY_HOST=" "$ENVF" && sed -i "s|^RELEASE_REGISTRY_HOST=.*|RELEASE_REGISTRY_HOST=$CENTOS_HOST|" "$ENVF" || echo "RELEASE_REGISTRY_HOST=$CENTOS_HOST" >>"$ENVF"
+    grep -q "^RELEASE_CORE_IMAGE=" "$ENVF" && sed -i "s|^RELEASE_CORE_IMAGE=.*|RELEASE_CORE_IMAGE=$CENTOS_CORE|" "$ENVF" || echo "RELEASE_CORE_IMAGE=$CENTOS_CORE" >>"$ENVF"
+    grep -q "^RELEASE_AGENT_IMAGE=" "$ENVF" && sed -i "s|^RELEASE_AGENT_IMAGE=.*|RELEASE_AGENT_IMAGE=centos.trtekyazilim.com/umiteyigun/yedek_kontrol/yedek-central-agent|" "$ENVF" || echo "RELEASE_AGENT_IMAGE=centos.trtekyazilim.com/umiteyigun/yedek_kontrol/yedek-central-agent" >>"$ENVF"
+  fi
 fi
+UPD=/opt/yedek_kontrol/scripts/release-updater.sh
+[[ -x "$UPD" ]] || UPD=/yedek/config/release-updater.sh
 export RELEASE_UPDATER_ENABLED=1 RELEASE_TRACK=pin RELEASE_TARGET_TAG={tag} RELEASE_UNLOCK_LATEST=1
-/bin/bash /opt/yedek_kontrol/scripts/release-updater.sh --tag {tag}
+/bin/bash "$UPD" --tag {tag}
 """
     start_cmd = (
         "nohup /bin/bash -lc "
