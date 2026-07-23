@@ -259,11 +259,11 @@ PY
 }
 
 reclaim_stale_notify_lock() {
-  # Bildirim asamasinda takilan kilit — FTP reclaim bunu kapsamiyordu.
-  [[ -f "$LOCK" ]] || return 0
-
+  # Bildirim asamasinda takilan status — kilit olmasa da temizlenir
+  # (process olmus, lock silinmis, Hub'da sonsuza "Bildirim" kalmasin).
   local sf stage age state lock_age=0 stale_age
   sf="$(_resolve_status_file)"
+  [[ -f "$sf" ]] || return 1
   state="$(_status_field "$sf" state 2>/dev/null || true)"
   stage="$(_status_field "$sf" stage 2>/dev/null || true)"
   age="$(_status_age_sec "$sf" 2>/dev/null || echo -1)"
@@ -288,13 +288,11 @@ reclaim_stale_notify_lock() {
     return 1
   fi
 
-  _wlog "stale notify reclaim: age=${stale_age}s threshold=${NOTIFY_STALE_SEC}s status=${sf}"
+  _wlog "stale notify reclaim: age=${stale_age}s threshold=${NOTIFY_STALE_SEC}s status=${sf} lock=$([[ -f $LOCK ]] && echo yes || echo no)"
 
-  # Takili bildirim / curl / disk-report sureclerini temizle
   pkill -f '/usr/bin/yedek\.sh' 2>/dev/null || true
   pkill -f 'disk-report\.sh' 2>/dev/null || true
 
-  # Yedek dosyasi zaten alinmis; bildirimi timeout say, kilidi ac
   _finish_status "$sf" done "stale notify reclaim: local backup ok, API notify stuck/timeout"
   rm -f "$LOCK" 2>/dev/null || true
   _wlog "stale notify reclaim: done, lock cleared"
@@ -305,6 +303,8 @@ while true; do
   if [ -f "$TRIGGER" ]; then
     TIP="$(tr -d '[:space:]' <"$TRIGGER")"
     rm -f "$TRIGGER"
+    # Kilit olmasa bile stale notifying status'u temizle
+    reclaim_stale_notify_lock || true
     if [ -f "$LOCK" ]; then
       if reclaim_stale_ftp_lock || reclaim_stale_notify_lock; then
         _wlog "stale lock reclaimed; continuing tip=$TIP"
@@ -327,9 +327,12 @@ while true; do
     fi
     "$RUNNER" "$TIP" || true
     rm -f "$LOCK"
-  elif [ -f "$LOCK" ]; then
-    # Trigger yokken de orphan bildirim/FTP kilidini ac
-    reclaim_stale_ftp_lock || reclaim_stale_notify_lock || true
+  else
+    # Trigger yokken orphan FTP kilidi + orphan notifying status
+    if [ -f "$LOCK" ]; then
+      reclaim_stale_ftp_lock || true
+    fi
+    reclaim_stale_notify_lock || true
   fi
   sleep 2
 done
