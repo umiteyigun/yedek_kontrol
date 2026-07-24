@@ -586,16 +586,22 @@ EOF
 
   compose_up_retry() {
     local svc="$1"
-    local profile=()
+    # set -u: bos array "${profile[@]}" unbound — profili ayri cagir
     if [[ "$svc" == "central-agent" ]]; then
-      profile=(--profile central)
+      if compose --profile central "${COMPOSE_FILES[@]}" up -d --force-recreate "$svc"; then
+        return 0
+      fi
+      echo "[$(ts)] ${phase}: compose conflict/retry for $svc" >&2
+      cleanup_stale_core_names
+      compose --profile central "${COMPOSE_FILES[@]}" up -d --force-recreate "$svc"
+      return $?
     fi
-    if compose "${profile[@]}" "${COMPOSE_FILES[@]}" up -d --force-recreate "$svc"; then
+    if compose "${COMPOSE_FILES[@]}" up -d --force-recreate "$svc"; then
       return 0
     fi
     echo "[$(ts)] ${phase}: compose conflict/retry for $svc" >&2
     cleanup_stale_core_names
-    compose "${profile[@]}" "${COMPOSE_FILES[@]}" up -d --force-recreate "$svc"
+    compose "${COMPOSE_FILES[@]}" up -d --force-recreate "$svc"
   }
 
   if ! compose_up_retry core; then
