@@ -179,13 +179,21 @@ resolve_target_tag() {
         return 0
       fi
     done
-    # ONEMLI: Hub manifesto yokken registry max-tag'e ZIPLATMA.
-    # Aksi halde (TLS/firewall) 99 gibi kirik ara tag'lere otomatik gecer.
+    # Hub :8444 cogu hastanede kapali — latest icin centos/registry kaynagi
+    # (cleanup artik guvenli; calisan yedek-core silinmez)
     if registry_tag="$(resolve_target_tag_from_registry)"; then
-      echo "[$(ts)] registry max=${registry_tag} (manifest yok — upgrade YOK, pin=${pinned:-yok})" >&2
-    else
-      echo "[$(ts)] latest tag cozulemedi, sabit tag kullaniliyor: ${pinned:-yok}" >&2
+      echo "[$(ts)] registry OK -> ${registry_tag} (hub manifesto yok/erisilemez)" >&2
+      if [[ -f "$ENV_FILE" ]]; then
+        if grep -q '^RELEASE_TARGET_TAG=' "$ENV_FILE" 2>/dev/null; then
+          sed -i "s|^RELEASE_TARGET_TAG=.*|RELEASE_TARGET_TAG=${registry_tag}|" "$ENV_FILE"
+        else
+          echo "RELEASE_TARGET_TAG=${registry_tag}" >>"$ENV_FILE"
+        fi
+      fi
+      echo "$registry_tag"
+      return 0
     fi
+    echo "[$(ts)] latest tag cozulemedi, sabit tag kullaniliyor: ${pinned:-yok}" >&2
   fi
   echo "$pinned"
 }
