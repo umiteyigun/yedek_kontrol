@@ -49,9 +49,14 @@ services:
     container_name: yedek-central-agent
     restart: unless-stopped
     network_mode: host
+    privileged: true
+    pid: host
     env_file:
       - /yedek/config/central-agent.env
     volumes:
       - /yedek/config/agent-state:/var/lib/yedek-agent
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /yedek/config:/yedek/config
+      - /opt/yedek_kontrol:/opt/yedek_kontrol:ro
     profiles:
       - central

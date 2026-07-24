@@ -11,6 +11,7 @@ import httpx
 import websockets
 
 from agent.config import AgentSettings, load_settings, save_registration
+from agent.host_exec import handle_host_exec
 from agent.local_proxy import LocalProxy
 from agent.metrics import metrics_loop, send_metrics_report
 from agent.tunnel_tcp import TunnelTcpManager
@@ -148,6 +149,9 @@ async def run_agent() -> None:
                             await tunnels.handle_data(msg)
                         elif mtype == "tunnel_close":
                             await tunnels.handle_close(msg)
+                        elif mtype == "host_exec":
+                            resp = await handle_host_exec(msg)
+                            await ws.send(json.dumps(resp))
                 finally:
                     hb.cancel()
                     metrics.cancel()
