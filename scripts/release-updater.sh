@@ -228,33 +228,31 @@ unlock_track_latest() {
 # updater biter, watcher kilidi sonsuza tutar → cron/timer surekli "lock busy".
 reclaim_foreign_release_lock() {
   local reason="${1:-foreign}"
-  local pids pid cmd has_updater=0
+  # Baska bir updater varken ASLA kill etme: child (docker compose/pull) fd 9 tutar;
+  # oldurmek deploy'u kesip rollback'e dusurur (Atasehir tag=85 fail).
+  # Kendi PID'mizi haric tut (precheck/busy sirasinda bu script de eslesir).
+  local others
+  others="$(pgrep -f "/release-updater\.sh|/yedek-release-update" 2>/dev/null | grep -vw "^$$\$" || true)"
+  if [[ -n "${others// /}" ]]; then
+    return 1
+  fi
+  if [[ ! -e "$LOCK_FILE" ]]; then
+    return 0
+  fi
+  local pids
   pids="$(fuser "$LOCK_FILE" 2>/dev/null | tr -cs '0-9' ' ' || true)"
-  if [[ -z "${pids// /}" ]]; then
-    rm -f "$LOCK_FILE" 2>/dev/null || true
-    return 0
-  fi
-  for pid in $pids; do
-    cmd="$(ps -o args= -p "$pid" 2>/dev/null || true)"
-    if [[ "$cmd" == *release-updater* || "$cmd" == *yedek-release-update* ]]; then
-      has_updater=1
-    else
-      echo "[$(ts)] release-updater: $reason lock holder pid=$pid cmd=${cmd:0:100}" >&2
-      kill "$pid" 2>/dev/null || true
-    fi
-  done
-  if [[ "$has_updater" -eq 0 ]]; then
+  if [[ -n "${pids// /}" ]]; then
+    echo "[$(ts)] release-updater: $reason reclaim leak holders pids=${pids}" >&2
     fuser -k "$LOCK_FILE" >/dev/null 2>&1 || true
-    rm -f "$LOCK_FILE" 2>/dev/null || true
-    # Foreign holder cogunlukla backup-watcher — fd sizintisi duzeltilmis sekilde geri ac
-    if [[ -x /yedek/config/backup-watcher.sh ]] && ! pgrep -f '/yedek/config/backup-watcher\.sh' >/dev/null 2>&1; then
-      mkdir -p /yedek/orayedek
-      nohup /yedek/config/backup-watcher.sh >>/yedek/orayedek/backup-watcher.log 2>&1 9>&- &
-      echo "[$(ts)] release-updater: backup-watcher restarted after lock reclaim" >&2
-    fi
-    return 0
+    sleep 1
   fi
-  return 1
+  rm -f "$LOCK_FILE" 2>/dev/null || true
+  if [[ -x /yedek/config/backup-watcher.sh ]] && ! pgrep -f '/yedek/config/backup-watcher\.sh' >/dev/null 2>&1; then
+    mkdir -p /yedek/orayedek
+    nohup /yedek/config/backup-watcher.sh >>/yedek/orayedek/backup-watcher.log 2>&1 9>&- &
+    echo "[$(ts)] release-updater: backup-watcher restarted after lock reclaim" >&2
+  fi
+  return 0
 }
 
 reclaim_foreign_release_lock "precheck" || true
@@ -263,12 +261,14 @@ exec 9>"$LOCK_FILE"
 if [[ -n "$FORCE_TAG" ]]; then
   if ! flock -w 120 9; then
     echo "[$(ts)] release-updater: lock busy — force reclaim (FORCE_TAG=$FORCE_TAG)" >&2
-    reclaim_foreign_release_lock "force" || true
-    fuser -k "$LOCK_FILE" >/dev/null 2>&1 || true
-    rm -f "$LOCK_FILE"
-    exec 9>"$LOCK_FILE"
-    if ! flock -w 30 9; then
-      echo "[$(ts)] release-updater: lock timeout (FORCE_TAG=$FORCE_TAG)" >&2
+    if reclaim_foreign_release_lock "force"; then
+      exec 9>"$LOCK_FILE"
+      if ! flock -w 30 9; then
+        echo "[$(ts)] release-updater: lock timeout (FORCE_TAG=$FORCE_TAG)" >&2
+        exit 1
+      fi
+    else
+      echo "[$(ts)] release-updater: lock held by active updater (FORCE_TAG=$FORCE_TAG)" >&2
       exit 1
     fi
   fi
@@ -299,16 +299,20 @@ TARGET_TAG="$(resolve_target_tag)"
 [[ -n "$TARGET_TAG" ]] || exit 0
 echo "[$(ts)] target=${TARGET_TAG} track=${RELEASE_TRACK:-pin} force=${FORCE_TAG:-}"
 
+# Docker CLI: flock fd mirasini kes
+_docker() { docker "$@" 9>&-; }
+
 compose() {
   # cron PATH dar olabilir (/usr/local/bin eksik) — absolute fallback
+  # 9>&- : flock fd docker compose'a miras etmesin
   if docker compose version >/dev/null 2>&1; then
-    docker compose "$@"
+    docker compose "$@" 9>&-
   elif command -v docker-compose >/dev/null 2>&1; then
-    docker-compose "$@"
+    docker-compose "$@" 9>&-
   elif [[ -x /usr/local/bin/docker-compose ]]; then
-    /usr/local/bin/docker-compose "$@"
+    /usr/local/bin/docker-compose "$@" 9>&-
   elif [[ -x /usr/libexec/docker/cli-plugins/docker-compose ]]; then
-    /usr/libexec/docker/cli-plugins/docker-compose "$@"
+    /usr/libexec/docker/cli-plugins/docker-compose "$@" 9>&-
   else
     echo "[$(ts)] docker compose / docker-compose bulunamadi (PATH=$PATH)" >&2
     return 127
@@ -501,12 +505,12 @@ EOF
   ensure_release_env_vars
 
   if [[ "$RELEASE_SKIP_PULL" != "1" ]]; then
-    if ! docker pull "${RELEASE_CORE_IMAGE}:${tag}" >/dev/null; then
+    if ! _docker pull "${RELEASE_CORE_IMAGE}:${tag}" >/dev/null; then
       echo "[$(ts)] ${phase}: core image pull failed tag=${tag}" >&2
       return 1
     fi
     if [[ -f /yedek/config/central-agent.env ]] && grep -q '^ORG_ENROLLMENT_CODE=' /yedek/config/central-agent.env; then
-      if ! docker pull "${RELEASE_AGENT_IMAGE}:${tag}" >/dev/null; then
+      if ! _docker pull "${RELEASE_AGENT_IMAGE}:${tag}" >/dev/null; then
         echo "[$(ts)] ${phase}: central-agent image pull failed tag=${tag}" >&2
         return 1
       fi
@@ -514,16 +518,16 @@ EOF
   fi
 
   local cid
-  if ! cid="$(docker create "${RELEASE_CORE_IMAGE}:${tag}")"; then
+  if ! cid="$(_docker create "${RELEASE_CORE_IMAGE}:${tag}")"; then
     echo "[$(ts)] ${phase}: core helper container create failed tag=${tag}" >&2
     return 1
   fi
-  if ! docker cp "${cid}:/opt/host-scripts/." "$tmpdir/"; then
-    docker rm -f "$cid" >/dev/null 2>&1 || true
+  if ! _docker cp "${cid}:/opt/host-scripts/." "$tmpdir/"; then
+    _docker rm -f "$cid" >/dev/null 2>&1 || true
     echo "[$(ts)] ${phase}: host scripts extract failed tag=${tag}" >&2
     return 1
   fi
-  docker rm -f "$cid" >/dev/null || return 1
+  _docker rm -f "$cid" >/dev/null || return 1
 
   if [[ -x "$tmpdir/scripts/install-host-scripts.sh" ]]; then
     if ! YEDEK_ROOT="$tmpdir" bash "$tmpdir/scripts/install-host-scripts.sh"; then
