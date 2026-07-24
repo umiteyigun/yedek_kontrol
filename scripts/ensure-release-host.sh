@@ -47,6 +47,10 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 EOF
 chmod 644 "$CRON_REL"
 log "cron.d/yedek-release-update yazildi (flock yok)"
+# Cron kullanan hostlarda systemd timer cift ateslemasin
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl disable --now yedek-release-update.timer 2>/dev/null || true
+fi
 
 # --- watcher keep-alive cron (process yoksa baslat) ---
 cat >"$CRON_WATCH" <<'EOF'

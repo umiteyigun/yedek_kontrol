@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+# release-updater flock (fd 9) miras kalmasin — aksi halde auto-update sonsuza kilitlenir
+exec 9>&- 2>/dev/null || true
+
 TRIGGER="/yedek/config/backup.trigger"
 LOCK="/yedek/orayedek/.backup-running"
 WATCH_LOG="/yedek/orayedek/backup-watcher.log"

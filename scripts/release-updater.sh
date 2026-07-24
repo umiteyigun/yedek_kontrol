@@ -223,16 +223,47 @@ unlock_track_latest() {
 
 # Kilit ONCE alinir. Cron'da `flock LOCK release-updater.sh` varsa child flock -n
 # basarisiz olur (cift kilit) — parent flock bizi zaten tek runner yapar, devam et.
-# Stale lock: dosya var ama release-updater process yoksa (hung docker pull vb.) temizle.
-if [[ -e "$LOCK_FILE" ]] && ! pgrep -f "/release-updater\.sh|/yedek-release-update" >/dev/null 2>&1; then
-  echo "[$(ts)] release-updater: stale lock reclaim ($LOCK_FILE)" >&2
-  fuser -k "$LOCK_FILE" >/dev/null 2>&1 || true
-  rm -f "$LOCK_FILE"
-fi
+#
+# Bilinen bug: backup-watcher nohup ile baslatilirken fd 9 (flock) miras alirsa
+# updater biter, watcher kilidi sonsuza tutar → cron/timer surekli "lock busy".
+reclaim_foreign_release_lock() {
+  local reason="${1:-foreign}"
+  local pids pid cmd has_updater=0
+  pids="$(fuser "$LOCK_FILE" 2>/dev/null | tr -cs '0-9' ' ' || true)"
+  if [[ -z "${pids// /}" ]]; then
+    rm -f "$LOCK_FILE" 2>/dev/null || true
+    return 0
+  fi
+  for pid in $pids; do
+    cmd="$(ps -o args= -p "$pid" 2>/dev/null || true)"
+    if [[ "$cmd" == *release-updater* || "$cmd" == *yedek-release-update* ]]; then
+      has_updater=1
+    else
+      echo "[$(ts)] release-updater: $reason lock holder pid=$pid cmd=${cmd:0:100}" >&2
+      kill "$pid" 2>/dev/null || true
+    fi
+  done
+  if [[ "$has_updater" -eq 0 ]]; then
+    fuser -k "$LOCK_FILE" >/dev/null 2>&1 || true
+    rm -f "$LOCK_FILE" 2>/dev/null || true
+    # Foreign holder cogunlukla backup-watcher — fd sizintisi duzeltilmis sekilde geri ac
+    if [[ -x /yedek/config/backup-watcher.sh ]] && ! pgrep -f '/yedek/config/backup-watcher\.sh' >/dev/null 2>&1; then
+      mkdir -p /yedek/orayedek
+      nohup /yedek/config/backup-watcher.sh >>/yedek/orayedek/backup-watcher.log 2>&1 9>&- &
+      echo "[$(ts)] release-updater: backup-watcher restarted after lock reclaim" >&2
+    fi
+    return 0
+  fi
+  return 1
+}
+
+reclaim_foreign_release_lock "precheck" || true
+
 exec 9>"$LOCK_FILE"
 if [[ -n "$FORCE_TAG" ]]; then
   if ! flock -w 120 9; then
     echo "[$(ts)] release-updater: lock busy — force reclaim (FORCE_TAG=$FORCE_TAG)" >&2
+    reclaim_foreign_release_lock "force" || true
     fuser -k "$LOCK_FILE" >/dev/null 2>&1 || true
     rm -f "$LOCK_FILE"
     exec 9>"$LOCK_FILE"
@@ -248,8 +279,19 @@ elif ! flock -n 9; then
   if [[ "$ppcmd" == *flock* && ( "$ppcmd" == *yedek-release-update* || "$ppcmd" == *release-updater* ) ]]; then
     echo "[$(ts)] release-updater: lock held by parent flock; continuing" >&2
   else
-    echo "[$(ts)] release-updater: skip (lock busy)" >&2
-    exit 0
+    # Gercek updater yoksa (sadece backup-watcher vb.) kilidi al, bir kez daha dene
+    if reclaim_foreign_release_lock "busy"; then
+      exec 9>"$LOCK_FILE"
+      if flock -n 9; then
+        echo "[$(ts)] release-updater: lock reclaimed after foreign holder" >&2
+      else
+        echo "[$(ts)] release-updater: skip (lock busy)" >&2
+        exit 0
+      fi
+    else
+      echo "[$(ts)] release-updater: skip (lock busy)" >&2
+      exit 0
+    fi
   fi
 fi
 
