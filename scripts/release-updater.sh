@@ -394,11 +394,15 @@ compose_files() {
   if [[ -f /yedek/config/docker-compose.volumes.yml ]]; then
     files+=(-f /yedek/config/docker-compose.volumes.yml)
   fi
+  if [[ -f /yedek/config/docker-compose.host-exec.yml ]]; then
+    files+=(-f /yedek/config/docker-compose.host-exec.yml)
+  fi
   printf '%s\n' "${files[@]}"
 }
 
 COMPOSE_FP_FILE="/yedek/config/compose-applied.fp"
 COMPOSE_RECREATE_FLAG="/yedek/config/compose-recreate.requested"
+HOST_EXEC_COMPOSE="/yedek/config/docker-compose.host-exec.yml"
 
 ensure_compose_base() {
   local base="$ROOT/docker-compose.yml"
@@ -406,7 +410,25 @@ ensure_compose_base() {
   if grep -q '/yedek/orayedek:/yedek/orayedek' "$base" && ! grep -qE '/yedek:/yedek[^/]' "$base"; then
     sed -i 's|/yedek/orayedek:/yedek/orayedek|/yedek:/yedek|g' "$base"
     echo "[$(ts)] docker-compose.yml: /yedek tam mount'a guncellendi"
-    return 0
+  fi
+  # Panel-down kurtarma: agent docker.sock + host config (host_exec)
+  cat >"${HOST_EXEC_COMPOSE}.tmp" <<'YAML'
+services:
+  central-agent:
+    privileged: true
+    pid: host
+    volumes:
+      - /yedek/config/agent-state:/var/lib/yedek-agent
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /yedek/config:/yedek/config
+      - /opt/yedek_kontrol:/opt/yedek_kontrol:ro
+YAML
+  if ! cmp -s "${HOST_EXEC_COMPOSE}.tmp" "$HOST_EXEC_COMPOSE" 2>/dev/null; then
+    mv -f "${HOST_EXEC_COMPOSE}.tmp" "$HOST_EXEC_COMPOSE"
+    echo "[$(ts)] docker-compose.host-exec.yml: agent host_exec mount yazildi"
+    touch "$COMPOSE_RECREATE_FLAG"
+  else
+    rm -f "${HOST_EXEC_COMPOSE}.tmp"
   fi
   return 0
 }
