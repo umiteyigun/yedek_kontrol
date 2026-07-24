@@ -330,6 +330,23 @@ fi
 
 TARGET_TAG="$(resolve_target_tag)"
 [[ -n "$TARGET_TAG" ]] || exit 0
+# Deploy boyunca cron yazilmasin / ateslenmesin (ensure-release-host + cron.d race)
+export YEDEK_RELEASE_DEPLOYING=1
+if [[ -f /etc/cron.d/yedek-release-update ]]; then
+  mv -f /etc/cron.d/yedek-release-update /var/tmp/yedek-release-update.cron.paused 2>/dev/null || rm -f /etc/cron.d/yedek-release-update
+fi
+rm -f /etc/cron.d/yedek-release-update.paused 2>/dev/null || true
+systemctl disable --now yedek-release-update.timer 2>/dev/null || true
+restore_release_cron() {
+  unset YEDEK_RELEASE_DEPLOYING
+  export YEDEK_RELEASE_ALLOW_CRON=1
+  if [[ -x /yedek/config/ensure-release-host.sh ]]; then
+    /yedek/config/ensure-release-host.sh >/dev/null 2>&1 || true
+  elif [[ -f /var/tmp/yedek-release-update.cron.paused ]]; then
+    mv -f /var/tmp/yedek-release-update.cron.paused /etc/cron.d/yedek-release-update 2>/dev/null || true
+  fi
+}
+trap restore_release_cron EXIT
 echo "[$(ts)] target=${TARGET_TAG} track=${RELEASE_TRACK:-pin} force=${FORCE_TAG:-}"
 
 # Docker CLI: flock fd mirasini kes
@@ -604,6 +621,7 @@ EOF
     compose "${COMPOSE_FILES[@]}" up -d --force-recreate "$svc"
   }
 
+  cleanup_stale_core_names
   if ! compose_up_retry core; then
     echo "[$(ts)] ${phase}: core compose failed tag=${tag}" >&2
     return 1

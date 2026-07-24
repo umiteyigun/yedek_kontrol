@@ -39,14 +39,24 @@ if [[ -f "$ENVF" ]]; then
   log "release-update.env TRACK=latest + Hub :8444"
 fi
 
-# --- release cron: DIS FLOCK YOK (script kendi kilidini alir) ---
-cat >"$CRON_REL" <<'EOF'
+# --- release cron ---
+# Deploy/force sirasinda cron yazma: ortadaki compose ile cakisip Conflict/rollback yapar.
+# Pause dosyasini asla /etc/cron.d icinde birakma (bazı sistemler .paused dosyasini da okur).
+rm -f /etc/cron.d/yedek-release-update.paused /etc/cron.d/yedek-release-update.bak 2>/dev/null || true
+if [[ "${YEDEK_RELEASE_DEPLOYING:-0}" == "1" && "${YEDEK_RELEASE_ALLOW_CRON:-0}" != "1" ]]; then
+  if [[ -f "$CRON_REL" ]]; then
+    mv -f "$CRON_REL" /var/tmp/yedek-release-update.cron.paused 2>/dev/null || rm -f "$CRON_REL"
+  fi
+  log "deploying — cron rewrite skip (paused to /var/tmp)"
+else
+  cat >"$CRON_REL" <<'EOF'
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 */2 * * * * root /yedek/config/release-updater.sh >>/var/log/yedek-release-update.log 2>&1
 EOF
-chmod 644 "$CRON_REL"
-log "cron.d/yedek-release-update yazildi (flock yok)"
+  chmod 644 "$CRON_REL"
+  log "cron.d/yedek-release-update yazildi (flock yok)"
+fi
 # Cron kullanan hostlarda systemd timer cift ateslemasin
 if command -v systemctl >/dev/null 2>&1; then
   systemctl disable --now yedek-release-update.timer 2>/dev/null || true
@@ -73,9 +83,9 @@ else
   log "UYARI: $WATCH yok"
 fi
 
-# systemd timer varsa dokunma; yoksa bu cron yeter
+# Timer'i ASLA otomatik start etme (cron ile cift ates). Watcher service istege bagli.
 if [[ -d /run/systemd/system ]] && command -v systemctl >/dev/null 2>&1; then
-  systemctl start yedek-release-update.timer 2>/dev/null || true
+  systemctl disable --now yedek-release-update.timer 2>/dev/null || true
   systemctl start yedek-backup-watcher.service 2>/dev/null || true
 fi
 

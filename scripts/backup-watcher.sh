@@ -1,8 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 
-# release-updater flock (fd 9) miras kalmasin — aksi halde auto-update sonsuza kilitlenir
+# release-updater flock mirasi — fd 9 veya baska fd ile lock tutulursa cron sonsuza skip
 exec 9>&- 2>/dev/null || true
+_rel_lock=/var/run/yedek-release-update.lock
+if [[ -e "$_rel_lock" || -e /run/yedek-release-update.lock ]]; then
+  for fd in /proc/$$/fd/*; do
+    [[ -e "$fd" ]] || continue
+    tgt="$(readlink "$fd" 2>/dev/null || true)"
+    if [[ "$tgt" == *yedek-release-update.lock* ]]; then
+      eval "exec ${fd##*/}>&-" 2>/dev/null || true
+    fi
+  done
+fi
 
 TRIGGER="/yedek/config/backup.trigger"
 LOCK="/yedek/orayedek/.backup-running"
