@@ -228,21 +228,35 @@ unlock_track_latest() {
 # updater biter, watcher kilidi sonsuza tutar → cron/timer surekli "lock busy".
 reclaim_foreign_release_lock() {
   local reason="${1:-foreign}"
-  # Baska bir updater varken ASLA kill etme: child (docker compose/pull) fd 9 tutar;
-  # oldurmek deploy'u kesip rollback'e dusurur (Atasehir tag=85 fail).
-  # Kendi PID'mizi haric tut (precheck/busy sirasinda bu script de eslesir).
-  local others
-  others="$(pgrep -f "/release-updater\.sh|/yedek-release-update" 2>/dev/null | grep -vw "^$$\$" || true)"
-  if [[ -n "${others// /}" ]]; then
+  local pids pid cmd real_other=0
+  # Hub bootstrap `bash -lc '... release-updater.sh ...'` pgrep'e takilir — bu "aktif updater" degil.
+  # Gercek eszamanli updater: argv release-updater.sh ile baslar / dogrudan script.
+  for pid in $(pgrep -f "release-updater\\.sh" 2>/dev/null || true); do
+    [[ -z "$pid" || "$pid" == "$$" ]] && continue
+    cmd="$(ps -o args= -p "$pid" 2>/dev/null || true)"
+    [[ -z "$cmd" ]] && continue
+    # Hub bootstrap: bash -lc '... release-updater.sh ...' — gercek updater degil
+    if [[ "$cmd" == *"bash -lc"* || "$cmd" == *"bash -c"* ]]; then
+      continue
+    fi
+    if [[ "$cmd" == *"/release-updater.sh"* || "$cmd" == *"release-updater.sh"* ]]; then
+      real_other=1
+      break
+    fi
+  done
+
+  if [[ "$real_other" -eq 1 ]]; then
+    echo "[$(ts)] release-updater: $reason skip reclaim (other updater running)" >&2
     return 1
   fi
+
   if [[ ! -e "$LOCK_FILE" ]]; then
     return 0
   fi
-  local pids
   pids="$(fuser "$LOCK_FILE" 2>/dev/null | tr -cs '0-9' ' ' || true)"
   if [[ -n "${pids// /}" ]]; then
     echo "[$(ts)] release-updater: $reason reclaim leak holders pids=${pids}" >&2
+    # Once leak tipi: backup-watcher / sleep; kalani da FORCE/leak senaryosunda birakma
     fuser -k "$LOCK_FILE" >/dev/null 2>&1 || true
     sleep 1
   fi
@@ -261,14 +275,14 @@ exec 9>"$LOCK_FILE"
 if [[ -n "$FORCE_TAG" ]]; then
   if ! flock -w 120 9; then
     echo "[$(ts)] release-updater: lock busy — force reclaim (FORCE_TAG=$FORCE_TAG)" >&2
-    if reclaim_foreign_release_lock "force"; then
-      exec 9>"$LOCK_FILE"
-      if ! flock -w 30 9; then
-        echo "[$(ts)] release-updater: lock timeout (FORCE_TAG=$FORCE_TAG)" >&2
-        exit 1
-      fi
-    else
-      echo "[$(ts)] release-updater: lock held by active updater (FORCE_TAG=$FORCE_TAG)" >&2
+    reclaim_foreign_release_lock "force" || true
+    # Son care: sadece lock tutanlari birak (bu process henuz flock almadigi icin kendini oldurmez)
+    fuser -k "$LOCK_FILE" >/dev/null 2>&1 || true
+    rm -f "$LOCK_FILE" 2>/dev/null || true
+    sleep 1
+    exec 9>"$LOCK_FILE"
+    if ! flock -w 30 9; then
+      echo "[$(ts)] release-updater: lock timeout (FORCE_TAG=$FORCE_TAG)" >&2
       exit 1
     fi
   fi
