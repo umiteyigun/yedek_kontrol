@@ -594,7 +594,8 @@ EOF
     local id name
     while read -r id name; do
       [[ -z "$id" ]] && continue
-      if [[ "$name" == *yedek-core* || "$name" == *yedek-central-agent* ]]; then
+      # Sadece compose conflict isimleri (hash_yedek-core); calisan yedek-core'u ASLA silme
+      if [[ "$name" == *_yedek-core || "$name" == *_yedek-central-agent ]]; then
         echo "[$(ts)] ${phase}: removing stale container name=$name id=$id" >&2
         _docker rm -f "$id" >/dev/null 2>&1 || true
       fi
