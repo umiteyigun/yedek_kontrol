@@ -228,36 +228,55 @@ unlock_track_latest() {
 # updater biter, watcher kilidi sonsuza tutar → cron/timer surekli "lock busy".
 reclaim_foreign_release_lock() {
   local reason="${1:-foreign}"
-  local pids pid cmd real_other=0
-  # Hub bootstrap `bash -lc '... release-updater.sh ...'` pgrep'e takilir — bu "aktif updater" degil.
-  # Gercek eszamanli updater: argv release-updater.sh ile baslar / dogrudan script.
+  local pids pid cmd
+  local leak_pids=""
+
+  # ONCE kilit tutanlara bak. bash -c ile spawn edilen force updater da gercektir —
+  # pgrep'de ignore edip fuser -k yapmak ortadaki compose'u oldurup cron cakismasi yaratir.
+  if [[ -e "$LOCK_FILE" ]]; then
+    pids="$(fuser "$LOCK_FILE" 2>/dev/null | tr -cs '0-9' ' ' || true)"
+    for pid in $pids; do
+      [[ -z "$pid" || "$pid" == "$$" ]] && continue
+      cmd="$(ps -o args= -p "$pid" 2>/dev/null || true)"
+      [[ -z "$cmd" ]] && continue
+      if [[ "$cmd" == *release-updater.sh* ]]; then
+        echo "[$(ts)] release-updater: $reason skip reclaim (lock held by updater pid=$pid)" >&2
+        return 1
+      fi
+      # Leak: backup-watcher / sleep flock mirasi
+      if [[ "$cmd" == *backup-watcher* || "$cmd" == *" sleep "* || "$cmd" == "sleep "* ]]; then
+        leak_pids="${leak_pids} ${pid}"
+      else
+        echo "[$(ts)] release-updater: $reason skip reclaim (unknown lock holder pid=$pid cmd=${cmd:0:80})" >&2
+        return 1
+      fi
+    done
+  fi
+
+  # Dogrudan (bash -c degil) baska updater calisiyor mu?
   for pid in $(pgrep -f "release-updater\\.sh" 2>/dev/null || true); do
     [[ -z "$pid" || "$pid" == "$$" ]] && continue
     cmd="$(ps -o args= -p "$pid" 2>/dev/null || true)"
     [[ -z "$cmd" ]] && continue
-    # Hub bootstrap: bash -lc '... release-updater.sh ...' — gercek updater degil
+    # Hub bootstrap wrapper (henuz flock almadan): bash -lc '... release-updater.sh ...'
     if [[ "$cmd" == *"bash -lc"* || "$cmd" == *"bash -c"* ]]; then
       continue
     fi
-    if [[ "$cmd" == *"/release-updater.sh"* || "$cmd" == *"release-updater.sh"* ]]; then
-      real_other=1
-      break
+    if [[ "$cmd" == *release-updater.sh* ]]; then
+      echo "[$(ts)] release-updater: $reason skip reclaim (other updater running pid=$pid)" >&2
+      return 1
     fi
   done
-
-  if [[ "$real_other" -eq 1 ]]; then
-    echo "[$(ts)] release-updater: $reason skip reclaim (other updater running)" >&2
-    return 1
-  fi
 
   if [[ ! -e "$LOCK_FILE" ]]; then
     return 0
   fi
-  pids="$(fuser "$LOCK_FILE" 2>/dev/null | tr -cs '0-9' ' ' || true)"
-  if [[ -n "${pids// /}" ]]; then
-    echo "[$(ts)] release-updater: $reason reclaim leak holders pids=${pids}" >&2
-    # Once leak tipi: backup-watcher / sleep; kalani da FORCE/leak senaryosunda birakma
-    fuser -k "$LOCK_FILE" >/dev/null 2>&1 || true
+
+  if [[ -n "${leak_pids// /}" ]]; then
+    echo "[$(ts)] release-updater: $reason reclaim leak holders pids=${leak_pids}" >&2
+    for pid in $leak_pids; do
+      kill "$pid" >/dev/null 2>&1 || true
+    done
     sleep 1
   fi
   rm -f "$LOCK_FILE" 2>/dev/null || true
@@ -275,10 +294,10 @@ exec 9>"$LOCK_FILE"
 if [[ -n "$FORCE_TAG" ]]; then
   if ! flock -w 120 9; then
     echo "[$(ts)] release-updater: lock busy — force reclaim (FORCE_TAG=$FORCE_TAG)" >&2
-    reclaim_foreign_release_lock "force" || true
-    # Son care: sadece lock tutanlari birak (bu process henuz flock almadigi icin kendini oldurmez)
-    fuser -k "$LOCK_FILE" >/dev/null 2>&1 || true
-    rm -f "$LOCK_FILE" 2>/dev/null || true
+    if ! reclaim_foreign_release_lock "force"; then
+      echo "[$(ts)] release-updater: lock timeout (other updater holds lock, FORCE_TAG=$FORCE_TAG)" >&2
+      exit 1
+    fi
     sleep 1
     exec 9>"$LOCK_FILE"
     if ! flock -w 30 9; then
@@ -552,12 +571,39 @@ EOF
 
   cd "$ROOT"
   mapfile -t COMPOSE_FILES < <(compose_files)
-  if ! compose "${COMPOSE_FILES[@]}" up -d --force-recreate core; then
+
+  # Yarim kalan recreate / isim cakismasi (baska updater oldurulurse kalir)
+  cleanup_stale_core_names() {
+    local id name
+    while read -r id name; do
+      [[ -z "$id" ]] && continue
+      if [[ "$name" == *yedek-core* || "$name" == *yedek-central-agent* ]]; then
+        echo "[$(ts)] ${phase}: removing stale container name=$name id=$id" >&2
+        _docker rm -f "$id" >/dev/null 2>&1 || true
+      fi
+    done < <(_docker ps -a --format '{{.ID}} {{.Names}}' 2>/dev/null | grep -E 'yedek-core|yedek-central-agent' || true)
+  }
+
+  compose_up_retry() {
+    local svc="$1"
+    local profile=()
+    if [[ "$svc" == "central-agent" ]]; then
+      profile=(--profile central)
+    fi
+    if compose "${profile[@]}" "${COMPOSE_FILES[@]}" up -d --force-recreate "$svc"; then
+      return 0
+    fi
+    echo "[$(ts)] ${phase}: compose conflict/retry for $svc" >&2
+    cleanup_stale_core_names
+    compose "${profile[@]}" "${COMPOSE_FILES[@]}" up -d --force-recreate "$svc"
+  }
+
+  if ! compose_up_retry core; then
     echo "[$(ts)] ${phase}: core compose failed tag=${tag}" >&2
     return 1
   fi
   if [[ -f /yedek/config/central-agent.env ]] && grep -q '^ORG_ENROLLMENT_CODE=' /yedek/config/central-agent.env; then
-    if ! compose --profile central "${COMPOSE_FILES[@]}" up -d --force-recreate central-agent; then
+    if ! compose_up_retry central-agent; then
       echo "[$(ts)] ${phase}: central-agent compose failed tag=${tag}" >&2
       return 1
     fi
