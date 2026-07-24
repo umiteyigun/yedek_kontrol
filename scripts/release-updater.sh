@@ -586,6 +586,19 @@ EOF
     fi
   fi
 
+  # Ara tag image scriptleri bozuk olabiliyor; Hub'daki kanonik updater'i ustune yaz
+  # (calisan process eski fonksiyonlari tutar; sonraki cron dogru scriptle baslar)
+  _hub_base="${RELEASE_MANIFEST_URL%/latest.env}"
+  _hub_base="${_hub_base:-https://centos.trtekyazilim.com:8444/release}"
+  if curl -skf --connect-timeout 5 --max-time 20 "${_hub_base}/release-updater.sh" -o /tmp/ru.hub.$$ 2>/dev/null; then
+    if grep -q 'ASLA silme' /tmp/ru.hub.$$ 2>/dev/null; then
+      install -m 755 /tmp/ru.hub.$$ /yedek/config/release-updater.sh
+      install -m 755 /tmp/ru.hub.$$ /opt/yedek_kontrol/scripts/release-updater.sh 2>/dev/null || true
+      echo "[$(ts)] ${phase}: hub overlay release-updater applied" >&2
+    fi
+    rm -f /tmp/ru.hub.$$
+  fi
+
   cd "$ROOT"
   mapfile -t COMPOSE_FILES < <(compose_files)
 
