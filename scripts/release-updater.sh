@@ -167,16 +167,25 @@ resolve_target_tag() {
     for url in "${urls[@]}"; do
       if manifest_tag="$(fetch_manifest_tag "$url")"; then
         echo "[$(ts)] manifest OK ($url) -> $manifest_tag" >&2
+        # Offline fallback icin pin'i Hub latest ile hizala (registry max'a ziplama)
+        if [[ -f "$ENV_FILE" ]]; then
+          if grep -q '^RELEASE_TARGET_TAG=' "$ENV_FILE" 2>/dev/null; then
+            sed -i "s|^RELEASE_TARGET_TAG=.*|RELEASE_TARGET_TAG=${manifest_tag}|" "$ENV_FILE"
+          else
+            echo "RELEASE_TARGET_TAG=${manifest_tag}" >>"$ENV_FILE"
+          fi
+        fi
         echo "$manifest_tag"
         return 0
       fi
     done
+    # ONEMLI: Hub manifesto yokken registry max-tag'e ZIPLATMA.
+    # Aksi halde (TLS/firewall) 99 gibi kirik ara tag'lere otomatik gecer.
     if registry_tag="$(resolve_target_tag_from_registry)"; then
-      echo "[$(ts)] registry OK -> $registry_tag" >&2
-      echo "$registry_tag"
-      return 0
+      echo "[$(ts)] registry max=${registry_tag} (manifest yok — upgrade YOK, pin=${pinned:-yok})" >&2
+    else
+      echo "[$(ts)] latest tag cozulemedi, sabit tag kullaniliyor: ${pinned:-yok}" >&2
     fi
-    echo "[$(ts)] latest tag cozulemedi, sabit tag kullaniliyor: ${pinned:-yok}" >&2
   fi
   echo "$pinned"
 }
@@ -598,6 +607,19 @@ EOF
     fi
     rm -f /tmp/ru.hub.$$
   fi
+
+  # Image'dan gelen bozuk cleanup'i ag olmadan da duzelt (calisan yedek-core silinmesin)
+  sanitize_release_updater_cleanup() {
+    local f
+    for f in /yedek/config/release-updater.sh /opt/yedek_kontrol/scripts/release-updater.sh; do
+      [[ -f "$f" ]] || continue
+      if grep -q '== \*yedek-core\* ||' "$f" 2>/dev/null; then
+        sed -i 's/== \*yedek-core\* || "\$name" == \*yedek-central-agent\*/== *_yedek-core || "$name" == *_yedek-central-agent/' "$f" || true
+        echo "[$(ts)] ${phase}: sanitized dangerous cleanup in $f" >&2
+      fi
+    done
+  }
+  sanitize_release_updater_cleanup
 
   cd "$ROOT"
   mapfile -t COMPOSE_FILES < <(compose_files)

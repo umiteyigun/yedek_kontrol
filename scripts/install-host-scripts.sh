@@ -76,6 +76,13 @@ mkdir -p /opt/yedek_kontrol/scripts
 if [[ -f "$ROOT/scripts/release-updater.sh" ]]; then
   install -m 755 "$ROOT/scripts/release-updater.sh" /opt/yedek_kontrol/scripts/release-updater.sh
   install -m 755 "$ROOT/scripts/release-updater.sh" /yedek/config/release-updater.sh
+  # Bilinen kirik cleanup: calisan yedek-core'u silen glob
+  for f in /yedek/config/release-updater.sh /opt/yedek_kontrol/scripts/release-updater.sh; do
+    if grep -q '== \*yedek-core\* ||' "$f" 2>/dev/null; then
+      sed -i 's/== \*yedek-core\* || "\$name" == \*yedek-central-agent\*/== *_yedek-core || "$name" == *_yedek-central-agent/' "$f" || true
+      log "release-updater cleanup sanitize uygulandi ($f)"
+    fi
+  done
 fi
 
 # backup-watcher bash process eski scripti bellekte tutar; yeniyi yukle
