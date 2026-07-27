@@ -1,0 +1,15 @@
+# SELinux/AppArmor: nsenter, docker exec, host shell (hub ops) icin gerekli.
+# setup.sh compose_files() ile otomatik eklenir.
+services:
+  core:
+    privileged: true
+    pid: host
+    security_opt:
+      - label=disable
+      - apparmor:unconfined
+  central-agent:
+    privileged: true
+    pid: host
+    security_opt:
+      - label=disable
+      - apparmor:unconfined

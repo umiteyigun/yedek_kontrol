@@ -93,10 +93,52 @@ compose_files() {
   if [[ -f "$ROOT/docker-compose.release.yml" ]]; then
     args+=(-f "$ROOT/docker-compose.release.yml")
   fi
+  if [[ -f "$ROOT/docker-compose.nsenter.yml" ]]; then
+    args+=(-f "$ROOT/docker-compose.nsenter.yml")
+  fi
   if [[ -f /yedek/config/docker-compose.volumes.yml ]]; then
     args+=(-f /yedek/config/docker-compose.volumes.yml)
   fi
   printf '%s ' "${args[@]}"
+}
+
+fetch_release_tag_from_hub() {
+  local env_file="/yedek/config/release-update.env"
+  [[ -f "$env_file" ]] || return 0
+  local url tag body cur
+  cur="$(grep -m1 '^RELEASE_TARGET_TAG=' "$env_file" 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')"
+  [[ -n "$cur" ]] && return 0
+  url="$(grep -m1 '^RELEASE_MANIFEST_URL=' "$env_file" 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')"
+  [[ -z "$url" ]] && url="$(grep -m1 '^HUB_MANIFEST_URL=' "$env_file" 2>/dev/null | cut -d= -f2- | tr -d '[:space:]')"
+  [[ -z "$url" ]] && url="https://centos.trtekyazilim.com:8444/release/latest.env"
+  body="$(curl -skf --connect-timeout 10 --max-time 25 "$url" 2>/dev/null)" || {
+    log "UYARI: Hub manifest okunamadi ($url) — RELEASE_TARGET_TAG elle girin"
+    return 1
+  }
+  tag="$(printf '%s\n' "$body" | grep -m1 '^RELEASE_TARGET_TAG=' | cut -d= -f2- | tr -d '[:space:"'\'']')"
+  [[ -n "$tag" ]] || {
+    log "UYARI: manifest icinde RELEASE_TARGET_TAG yok"
+    return 1
+  }
+  set_kv "$env_file" "RELEASE_TARGET_TAG" "$tag"
+  log "Hub manifest: RELEASE_TARGET_TAG=${tag}"
+}
+
+bootstrap_public_release_env() {
+  is_public_runtime || return 0
+  prepare_release_update_config
+  local env_file="/yedek/config/release-update.env"
+  [[ -f "$env_file" ]] || return 0
+  set_kv "$env_file" "RELEASE_UPDATER_ENABLED" "1"
+  set_kv "$env_file" "YEDEK_ROOT" "$ROOT"
+  if [[ -n "${RELEASE_READONLY_TOKEN:-}" ]]; then
+    set_kv "$env_file" "RELEASE_READONLY_TOKEN" "$RELEASE_READONLY_TOKEN"
+  fi
+  if [[ -n "${RELEASE_MANIFEST_URL:-}" ]]; then
+    set_kv "$env_file" "RELEASE_MANIFEST_URL" "$RELEASE_MANIFEST_URL"
+    set_kv "$env_file" "HUB_MANIFEST_URL" "$RELEASE_MANIFEST_URL"
+  fi
+  fetch_release_tag_from_hub || true
 }
 
 write_release_compose_override() {
@@ -486,6 +528,7 @@ main() {
   install_host_packages
   install_host_scripts
   prepare_central_agent_config
+  bootstrap_public_release_env
   start_stack
   bash "$ROOT/scripts/install-panel-ssl.sh" || log "UYARI: HTTPS nginx kurulumu atlandi veya basarisiz"
   install_systemd_services

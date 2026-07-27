@@ -64,6 +64,16 @@ fi
 : "${RELEASE_READONLY_TOKEN:=}"
 : "${RELEASE_REGISTRY_USER:=oauth2}"
 : "${RELEASE_SKIP_PULL:=0}"
+# compose up sonrasi core hemen hazir olmayabilir — health retry
+: "${RELEASE_HEALTH_URL:=http://127.0.0.1:8090/health}"
+: "${RELEASE_HEALTH_RETRIES:=40}"
+: "${RELEASE_HEALTH_INTERVAL:=3}"
+: "${RELEASE_HEALTH_CURL_MAX:=5}"
+: "${RELEASE_FAIL_MAX:=3}"
+: "${RELEASE_FAIL_COOLDOWN_SEC:=1800}"
+FAIL_STATE_FILE="/yedek/config/release-fail.state"
+UPD_CANON="/yedek/config/release-updater.sh"
+UPD_OPT="/opt/yedek_kontrol/scripts/release-updater.sh"
 
 # Hub/manuel tetik: sabit tag zorla (latest track'i gecici kapat)
 if [[ -n "$FORCE_TAG" ]]; then
@@ -235,8 +245,99 @@ unlock_track_latest() {
   fi
 }
 
+# Chicken-egg kirici: Hub overlay'den guncel updater al, bir kez self-exec.
+bootstrap_updater_from_hub() {
+  [[ "${YEDEK_UPDATER_BOOTSTRAPPED:-0}" == "1" ]] && return 0
+  local hub_base overlay tmp marker self
+  hub_base="${RELEASE_MANIFEST_URL%/latest.env}"
+  hub_base="${hub_base:-https://centos.trtekyazilim.com:8444/release}"
+  overlay="${hub_base}/release-updater.sh"
+  tmp="$(mktemp /tmp/ru.hub.XXXXXX 2>/dev/null || echo /tmp/ru.hub.$$)"
+  if ! curl -skf --connect-timeout 5 --max-time 25 "$overlay" -o "$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    return 0
+  fi
+  if ! grep -q 'ASLA silme' "$tmp" 2>/dev/null; then
+    rm -f "$tmp"
+    return 0
+  fi
+  if ! grep -q 'wait_for_core_health\|bootstrap_updater_from_hub\|release-fail.state' "$tmp" 2>/dev/null; then
+    # Cok eski/yanlis overlay — uygulama
+    rm -f "$tmp"
+    return 0
+  fi
+  install -m 755 "$tmp" "$UPD_CANON" 2>/dev/null || true
+  install -m 755 "$tmp" "$UPD_OPT" 2>/dev/null || true
+  rm -f "$tmp"
+  self="$UPD_CANON"
+  [[ -x "$self" ]] || self="$0"
+  echo "[$(ts)] bootstrap: hub overlay applied — re-exec" >&2
+  export YEDEK_UPDATER_BOOTSTRAPPED=1
+  if [[ -n "$FORCE_TAG" ]]; then
+    exec bash "$self" --tag "$FORCE_TAG"
+  else
+    exec bash "$self"
+  fi
+}
+
+clear_fail_state() {
+  rm -f "$FAIL_STATE_FILE" 2>/dev/null || true
+}
+
+read_fail_count() {
+  local n=0
+  if [[ -f "$FAIL_STATE_FILE" ]]; then
+    n="$(sed -n 's/.*"fail_count":\([0-9]*\).*/\1/p' "$FAIL_STATE_FILE" | head -1)"
+  fi
+  [[ "$n" =~ ^[0-9]+$ ]] || n=0
+  echo "$n"
+}
+
+cooldown_active() {
+  [[ -f "$FAIL_STATE_FILE" ]] || return 1
+  local until_ts now
+  until_ts="$(sed -n 's/.*"cooldown_until":\([0-9]*\).*/\1/p' "$FAIL_STATE_FILE" | head -1)"
+  [[ "$until_ts" =~ ^[0-9]+$ ]] || return 1
+  now="$(date +%s)"
+  (( now < until_ts ))
+}
+
+arm_fail_cooldown() {
+  local running="${1:-}"
+  local count until_ts now
+  now="$(date +%s)"
+  count="$(read_fail_count)"
+  count=$((count + 1))
+  until_ts=0
+  if (( count >= RELEASE_FAIL_MAX )); then
+    until_ts=$((now + RELEASE_FAIL_COOLDOWN_SEC))
+    echo "[$(ts)] cooldown armed: fail_count=${count} until=$(date -d "@${until_ts}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "$until_ts") sec=${RELEASE_FAIL_COOLDOWN_SEC}" >&2
+    if [[ -n "$running" ]]; then
+      sync_fallback_pin "$running"
+    fi
+  else
+    echo "[$(ts)] fail streak ${count}/${RELEASE_FAIL_MAX} (cooldown yok)" >&2
+  fi
+  mkdir -p "$(dirname "$FAIL_STATE_FILE")"
+  cat >"${FAIL_STATE_FILE}.tmp" <<EOF
+{"fail_count":${count},"cooldown_until":${until_ts},"updated_at":$(date +%s),"running_tag":"${running}"}
+EOF
+  mv -f "${FAIL_STATE_FILE}.tmp" "$FAIL_STATE_FILE"
+}
+
+running_core_tag() {
+  if docker inspect yedek-core >/dev/null 2>&1; then
+    docker inspect yedek-core --format '{{.Config.Image}}' 2>/dev/null | awk -F: '{print $NF}'
+  else
+    echo ""
+  fi
+}
+
 [[ "$RELEASE_UPDATER_ENABLED" == "1" ]] || exit 0
 [[ -d "$ROOT" ]] || exit 1
+
+# Hub'dan guncel updater (eski hostlar thrash'te kalmasin)
+bootstrap_updater_from_hub
 
 # Kilit ONCE alinir. Cron'da `flock LOCK release-updater.sh` varsa child flock -n
 # basarisiz olur (cift kilit) — parent flock bizi zaten tek runner yapar, devam et.
@@ -343,6 +444,13 @@ elif ! flock -n 9; then
       exit 0
     fi
   fi
+fi
+
+# Fail cooldown: thrash kes (FORCE_TAG her zaman gecer)
+if [[ -z "$FORCE_TAG" ]] && cooldown_active; then
+  local_until="$(sed -n 's/.*"cooldown_until":\([0-9]*\).*/\1/p' "$FAIL_STATE_FILE" | head -1)"
+  echo "[$(ts)] skip: fail cooldown active until=${local_until} (FORCE_TAG ile gecilebilir)" >&2
+  exit 0
 fi
 
 TARGET_TAG="$(resolve_target_tag)"
@@ -530,10 +638,12 @@ recreate_current_tag() {
     write_applied_compose_fp "$(compose_fingerprint)"
     rm -f "$COMPOSE_RECREATE_FLAG"
     write_state "ok" "Compose recreate tamamlandi (tag=${tag})" "$tag" "$tag"
+    clear_fail_state
     echo "[$(ts)] compose recreate ok: tag=${tag}"
     return 0
   fi
   write_state "failed" "Compose recreate basarisiz (tag=${tag})" "$tag" "$tag"
+  arm_fail_cooldown "$tag"
   return 1
 }
 
@@ -699,8 +809,40 @@ EOF
     fi
   fi
 
-  if ! curl -sf --max-time 8 http://127.0.0.1:8090/health >/dev/null; then
-    echo "[$(ts)] ${phase}: health check failed tag=${tag}" >&2
+  # Core uvicorn/nginx gec acilabiliyor; tek seferlik curl false-negative → thrash.
+  wait_for_core_health() {
+    local attempt=1
+    local max="${RELEASE_HEALTH_RETRIES:-40}"
+    local interval="${RELEASE_HEALTH_INTERVAL:-3}"
+    local url="${RELEASE_HEALTH_URL:-http://127.0.0.1:8090/health}"
+    local curl_max="${RELEASE_HEALTH_CURL_MAX:-5}"
+    local core_st=""
+    [[ "$max" =~ ^[0-9]+$ ]] || max=40
+    [[ "$interval" =~ ^[0-9]+$ ]] || interval=3
+    (( max < 1 )) && max=1
+    (( interval < 1 )) && interval=1
+    echo "[$(ts)] ${phase}: health wait tag=${tag} url=${url} retries=${max} interval=${interval}s" >&2
+    while (( attempt <= max )); do
+      if curl -sf --max-time "$curl_max" "$url" >/dev/null 2>&1; then
+        echo "[$(ts)] ${phase}: health OK tag=${tag} attempt=${attempt}/${max}" >&2
+        return 0
+      fi
+      core_st="$(_docker inspect -f '{{.State.Status}}' yedek-core 2>/dev/null || echo missing)"
+      if [[ "$core_st" != "running" && "$core_st" != "restarting" ]]; then
+        echo "[$(ts)] ${phase}: health aborted tag=${tag} core_status=${core_st} attempt=${attempt}/${max}" >&2
+        return 1
+      fi
+      if (( attempt == 1 || attempt % 5 == 0 || attempt == max )); then
+        echo "[$(ts)] ${phase}: health retry tag=${tag} attempt=${attempt}/${max} core=${core_st}" >&2
+      fi
+      sleep "$interval"
+      attempt=$((attempt + 1))
+    done
+    echo "[$(ts)] ${phase}: health check failed tag=${tag} after ${max} attempts" >&2
+    return 1
+  }
+
+  if ! wait_for_core_health; then
     return 1
   fi
 
@@ -761,6 +903,7 @@ fi
 if [[ "$PREV_TAG" == "$TARGET_TAG" ]]; then
   # Sorun yok gorunse bile fallback pin'i calisan tag ile hizala (oto heal)
   sync_fallback_pin "$TARGET_TAG"
+  clear_fail_state
   if needs_compose_recreate; then
     recreate_current_tag "$TARGET_TAG" || exit 1
     exit 0
@@ -773,6 +916,7 @@ fi
 write_state "updating" "Release gecisi basladi" "$PREV_TAG" "$TARGET_TAG"
 if deploy_tag "$TARGET_TAG" "deploy"; then
   write_state "ok" "Release guncellendi" "$TARGET_TAG" "$TARGET_TAG"
+  clear_fail_state
   # Basarili deploy sonrasi fallback pin her zaman yeni tag (FORCE sart degil)
   sync_fallback_pin "$TARGET_TAG"
   # Hub/manuel --tag sonrasi latest track'e geri ac
@@ -790,10 +934,13 @@ if [[ -n "$PREV_TAG" ]]; then
     write_state "rolled_back" "Rollback basarili" "$PREV_TAG" "$TARGET_TAG"
     # Rollback sonrasi pin eski calisan tag'de kalsin; yeni broken tag'e kitlenme
     sync_fallback_pin "$PREV_TAG"
+    arm_fail_cooldown "$PREV_TAG"
     echo "[$(ts)] rollback ok: ${PREV_TAG}"
     exit 1
   fi
 fi
 
-write_state "failed" "Deploy/rollback basarisiz" "$PREV_TAG" "$TARGET_TAG"
+RUN_NOW="$(running_core_tag)"
+write_state "failed" "Deploy/rollback basarisiz" "${PREV_TAG:-$RUN_NOW}" "$TARGET_TAG"
+arm_fail_cooldown "${RUN_NOW:-$PREV_TAG}"
 exit 1

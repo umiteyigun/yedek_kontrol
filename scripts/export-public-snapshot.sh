@@ -20,6 +20,7 @@ rsync -a \
   "$ROOT/.env.example" \
   "$ROOT/.gitignore" \
   "$ROOT/docker-compose.yml" \
+  "$ROOT/docker-compose.nsenter.yml" \
   "$ROOT/nginx/" \
   "$ROOT/vsftpd/" \
   "$OUT_DIR/"
@@ -92,10 +93,15 @@ services:
     container_name: yedek-central-agent
     restart: unless-stopped
     network_mode: host
+    privileged: true
+    pid: host
     env_file:
       - /yedek/config/central-agent.env
     volumes:
       - /yedek/config/agent-state:/var/lib/yedek-agent
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /yedek/config:/yedek/config
+      - /opt/yedek_kontrol:/opt/yedek_kontrol:ro
     profiles:
       - central
 EOF
@@ -114,7 +120,22 @@ Oracle yedek istemcisi **runtime** deposu. Uygulama kaynak kodu burada yok;
 - `docker-compose.yml` — image tabanli stack tanimi
 - `nginx/`, `vsftpd/` — panel/FTP yardimci config
 
-## Kurulum
+## Kurulum (tek satir)
+
+Oracle sunucusunda **root** olarak:
+
+```bash
+git clone https://git.trtek.tr/yedek_kontrol_public.git /opt/yedek_kontrol && ORG_ENROLLMENT_CODE=KURUM-KODU HUB_HTTP_URL=https://centos.trtekyazilim.com:8444 HUB_AGENT_REGISTER_SECRET=... CENTRAL_PROXY_SECRET=... RELEASE_READONLY_TOKEN=... SETUP_NONINTERACTIVE=1 bash /opt/yedek_kontrol/scripts/bootstrap-public-install.sh
+```
+
+Opsiyonel env:
+- `PANEL_HTTPS_PORT=9443` — 8443 baska serviste (or. PACS) ise
+- `NODE_LABEL=primary` / `NODE_ROLE=PRIMARY` — coklu sunucu
+- `HUB_WS_URL` — bos birakilirsa HTTP adresinden uretilir
+
+`RELEASE_TARGET_TAG` bos ise setup hub manifestinden (`/release/latest.env`) otomatik ceker.
+
+## Kurulum (adim adim)
 
 ```bash
 git clone https://git.trtek.tr/yedek_kontrol_public.git /opt/yedek_kontrol
@@ -123,7 +144,7 @@ cd /opt/yedek_kontrol
 # Registry ve hedef tag (ornek)
 mkdir -p /yedek/config
 cp config/release-update.example.env /yedek/config/release-update.env
-# RELEASE_TARGET_TAG, RELEASE_READONLY_TOKEN, RELEASE_CORE_IMAGE doldur
+# RELEASE_READONLY_TOKEN doldur (tag bos birakilabilir — hub manifest)
 
 sudo bash setup.sh
 ```

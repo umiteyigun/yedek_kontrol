@@ -113,12 +113,10 @@ async def run_allowlist(action: str, params: dict[str, Any] | None = None) -> di
                 "stderr": "release-updater.sh yok (mount / nsenter)",
             }
         env = {
-            "FORCE_TAG": tag,
-            "RELEASE_TRACK": "latest",
             "RELEASE_UNLOCK_LATEST": "1",
         }
         return await _run(
-            ["bash", updater],
+            ["bash", updater, "--tag", tag],
             timeout=RELEASE_TIMEOUT,
             env=env,
         )

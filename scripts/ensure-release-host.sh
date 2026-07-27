@@ -13,17 +13,27 @@ UPD=/yedek/config/release-updater.sh
 WATCH=/yedek/config/backup-watcher.sh
 LOG_REL=/var/log/yedek-release-update.log
 LOG_WATCH=/yedek/orayedek/backup-watcher.log
+FAIL_STATE=/yedek/config/release-fail.state
 
 mkdir -p /yedek/config /yedek/orayedek /var/log /opt/yedek_kontrol/scripts
 touch "$LOG_REL" 2>/dev/null || true
 chmod 640 "$LOG_REL" 2>/dev/null || true
 
-# --- env: latest + Hub manifesto ---
+cooldown_active() {
+  [[ -f "$FAIL_STATE" ]] || return 1
+  local until_ts now
+  until_ts="$(sed -n 's/.*"cooldown_until":\([0-9]*\).*/\1/p' "$FAIL_STATE" | head -1)"
+  [[ "$until_ts" =~ ^[0-9]+$ ]] || return 1
+  (( until_ts > 0 )) || return 1
+  now="$(date +%s)"
+  (( now < until_ts ))
+}
+
+# --- env: Hub manifesto URL'leri; TRACK'i koru (pin/cooldown ezilmesin) ---
 if [[ -f "$ENVF" ]]; then
   cp -a "$ENVF" "${ENVF}.bak.ensure.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
   for kv in \
     "RELEASE_UPDATER_ENABLED=1" \
-    "RELEASE_TRACK=latest" \
     "RELEASE_UNLOCK_LATEST=1" \
     "RELEASE_SKIP_PULL=0" \
     "RELEASE_MANIFEST_URL=https://centos.trtekyazilim.com:8444/release/latest.env" \
@@ -36,7 +46,17 @@ if [[ -f "$ENVF" ]]; then
       echo "${k}=${v}" >>"$ENVF"
     fi
   done
-  log "release-update.env TRACK=latest + Hub :8444"
+  # TRACK yalniz yoksa latest; cooldown veya pin varken dokunma
+  if ! grep -q '^RELEASE_TRACK=' "$ENVF" 2>/dev/null; then
+    echo 'RELEASE_TRACK=latest' >>"$ENVF"
+    log "RELEASE_TRACK=latest (ilk yazim)"
+  elif cooldown_active; then
+    log "cooldown aktif — RELEASE_TRACK korunuyor"
+  else
+    cur_track="$(grep -m1 '^RELEASE_TRACK=' "$ENVF" | cut -d= -f2- | tr -d '[:space:]')"
+    log "RELEASE_TRACK=${cur_track:-?} korunuyor (zorla latest yok)"
+  fi
+  log "release-update.env Hub :8444 hazir"
 fi
 
 # --- release cron ---
@@ -52,10 +72,10 @@ else
   cat >"$CRON_REL" <<'EOF'
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
-*/2 * * * * root /yedek/config/release-updater.sh >>/var/log/yedek-release-update.log 2>&1
+*/5 * * * * root /yedek/config/release-updater.sh >>/var/log/yedek-release-update.log 2>&1
 EOF
   chmod 644 "$CRON_REL"
-  log "cron.d/yedek-release-update yazildi (flock yok)"
+  log "cron.d/yedek-release-update yazildi (*/5, flock yok)"
 fi
 # Cron kullanan hostlarda systemd timer cift ateslemasin
 if command -v systemctl >/dev/null 2>&1; then

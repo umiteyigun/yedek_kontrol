@@ -1,5 +1,5 @@
 #!/bin/bash
-# Yedek asama durumu — .backup-status.json guncelleme (root + oracle).
+# Yedek asama durumu - .backup-status.json guncelleme (root + oracle).
 # Python 2.6+ / 3.x ile calisir (Oracle host'larda default siklikla 2.6; total_seconds 2.7+).
 # Default path; yedek.sh readonly tanimliyorsa yeniden atama yapma.
 if [[ -z "${BACKUP_STATUS_FILE:-}" ]]; then
@@ -205,7 +205,7 @@ elif action == "finish":
     data["state"] = state
     data["exit_code"] = exit_code
     data["updated_at"] = now
-    # Hub'da "Bildirim"de kalmasin — bitti ise stage=done
+    # Hub'da "Bildirim"de kalmasin - bitti ise stage=done
     if state in ("done", "failed", "skipped"):
         data["stage"] = state
         data["stage_started_at"] = now
