@@ -6,7 +6,16 @@ set -euo pipefail
 TIP="${1:-GUNLUK}"
 INSTANCE_ID="${2:-}"
 
-python - "$TIP" "$INSTANCE_ID" <<'PY'
+if command -v python3 >/dev/null 2>&1; then
+  PY=python3
+elif command -v python >/dev/null 2>&1; then
+  PY=python
+else
+  echo "HATA: python3/python bulunamadi" >&2
+  exit 1
+fi
+
+"$PY" - "$TIP" "$INSTANCE_ID" <<'PY'
 from __future__ import print_function
 import json
 import os

@@ -6,9 +6,11 @@ YEDEK_DIR="/yedek/orayedek"
 RUN_LOG=""
 STATUS_FILE=""
 BACKUP_STATUS_FILE=""
-FTP_STALE_SEC="${FTP_STALE_SEC:-10800}"
+FTP_STALE_SEC="${FTP_STALE_SEC:-18000}"
 NOTIFY_STALE_SEC="${NOTIFY_STALE_SEC:-900}"
 
+# shellcheck source=/dev/null
+source /yedek/config/backup-lock-lib.sh
 # shellcheck source=/dev/null
 source /yedek/config/backup-status-lib.sh
 
@@ -197,6 +199,12 @@ INSTANCE_DIR="$(resolve_instance_backup_dir "$INSTANCE_ID")"
 RUN_LOG="${INSTANCE_DIR}/panel-backup-$(date +%Y%m%d%H%M%S).log"
 STATUS_FILE="${INSTANCE_DIR}/.backup-status.json"
 BACKUP_STATUS_FILE="$STATUS_FILE"
+LOCK_TIP="${TIP}"
+if [[ -n "$INSTANCE_ID" ]]; then
+  LOCK_TIP="${TIP}:${INSTANCE_ID}:${FTP_TARGET}"
+fi
+touch "$(backup_lock_for_tip "$LOCK_TIP")"
+touch "$LOCK_DEFAULT" 2>/dev/null || true
 write_status "running" 0
 if ! DISK_MSG="$(/yedek/config/disk-check-backup.sh "$TIP" "$INSTANCE_ID" 2>&1)"; then
   bs_finish --state skipped --exit-code 12
@@ -228,4 +236,5 @@ else
   write_status "failed" "$EXIT_CODE"
 fi
 echo "=== Yedek bitti: $(date) exit=$EXIT_CODE ===" >>"$RUN_LOG"
+backup_remove_locks_for_tip "$LOCK_TIP"
 exit "$EXIT_CODE"

@@ -165,12 +165,18 @@ def collect_agent_snapshot(
         "disk_yedek_free_gb": server_info.get("disk_yedek_free_gb"),
     }
 
+    primary = settings.first_instance()
+    if primary:
+        bs = backup_service.backup_status_for_instance(settings, primary)
+    else:
+        bs = backup_service.backup_status(yedek_dir)
+
     return {
         "reported_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "config_version": store.version,
         "instance_count": len(instances),
         "host": host,
-        "backup_status": backup_service.backup_status(yedek_dir),
+        "backup_status": bs,
         "release": release_state,
         "instances": instances,
     }

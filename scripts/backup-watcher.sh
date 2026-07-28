@@ -15,10 +15,12 @@ if [[ -e "$_rel_lock" || -e /run/yedek-release-update.lock ]]; then
 fi
 
 TRIGGER="/yedek/config/backup.trigger"
-LOCK="/yedek/orayedek/.backup-running"
 WATCH_LOG="/yedek/orayedek/backup-watcher.log"
-FTP_STALE_SEC="${FTP_STALE_SEC:-10800}"
-NOTIFY_STALE_SEC="${NOTIFY_STALE_SEC:-900}"
+ACTIVE_TIP=""
+
+# shellcheck source=backup-lock-lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/backup-lock-lib.sh"
+LOCK="$LOCK_DEFAULT"
 FTP_STATE="/yedek/config/ftp-upload.state"
 FTP_HELPER="/yedek/config/ftp-put.py"
 STATUS_DEFAULT="/yedek/orayedek/.backup-status.json"
@@ -35,6 +37,21 @@ _ftp_py() {
   else
     return 1
   fi
+}
+
+_resolve_status_file_for_tip() {
+  local tip="${1:-}"
+  local sf dir
+  if [[ -n "$tip" ]]; then
+    backup_parse_tip "$tip"
+    dir="$(backup_instance_dir "$BACKUP_INSTANCE_ID")"
+    sf="${dir}/.backup-status.json"
+    if [[ -f "$sf" ]]; then
+      printf '%s\n' "$sf"
+      return 0
+    fi
+  fi
+  _resolve_status_file
 }
 
 _resolve_status_file() {
@@ -171,19 +188,30 @@ PY
 
 reclaim_stale_ftp_lock() {
   # Returns 0 if lock was reclaimed (caller may proceed), 1 if still busy.
-  [[ -f "$LOCK" ]] || return 0
+  [[ -f "$LOCK" || -f "$LOCK_DEFAULT" ]] || return 0
+
+  if backup_work_active; then
+    return 1
+  fi
 
   local sf stage age state
-  sf="$(_resolve_status_file)"
+  if [[ -n "$ACTIVE_TIP" ]]; then
+    sf="$(_resolve_status_file_for_tip "$ACTIVE_TIP")"
+  else
+    sf="$(_resolve_status_file)"
+  fi
   state="$(_status_field "$sf" state 2>/dev/null || true)"
   stage="$(_status_field "$sf" stage 2>/dev/null || true)"
   age="$(_status_age_sec "$sf" 2>/dev/null || echo -1)"
 
   # Also treat very old lock mtime as stale even without status
   local lock_age=0
-  if [[ -f "$LOCK" ]]; then
-    lock_age=$(( $(date +%s) - $(stat -c %Y "$LOCK" 2>/dev/null || echo 0) ))
-  fi
+  local lf la
+  for lf in "$LOCK" "$LOCK_DEFAULT"; do
+    [[ -f "$lf" ]] || continue
+    la=$(( $(date +%s) - $(stat -c %Y "$lf" 2>/dev/null || echo 0) ))
+    [[ "$la" -gt "$lock_age" ]] && lock_age="$la"
+  done
 
   local is_ftp_stage=0
   if [[ "${stage:-}" == "ftp_upload" ]]; then
@@ -262,13 +290,114 @@ PY
   if [[ "$match" -eq 1 ]]; then
     _finish_status "$sf" done "stale FTP reclaim: remote SIZE matched (Ftp=1)"
     _wlog "stale FTP reclaim: SIZE match -> done, lock cleared"
+  elif backup_local_artifact_complete "$sf"; then
+    _finish_status "$sf" done "stale FTP reclaim: local backup complete (Ftp verify inconclusive)"
+    _wlog "stale FTP reclaim: local artifact ok -> done, lock cleared"
   else
     _finish_status "$sf" failed "stale FTP reclaim: timeout/incomplete (Ftp=0)"
     _wlog "stale FTP reclaim: no SIZE match -> failed, lock cleared"
   fi
 
-  rm -f "$LOCK" "$FTP_STATE" 2>/dev/null || true
+  if [[ -n "$ACTIVE_TIP" ]]; then
+    backup_remove_locks_for_tip "$ACTIVE_TIP"
+  else
+    rm -f "$LOCK" "$LOCK_DEFAULT" 2>/dev/null || true
+  fi
+  rm -f "$FTP_STATE" 2>/dev/null || true
   return 0
+}
+
+reclaim_stale_orphan_lock() {
+  # Kilit var ama gercek is yok: hayalet yedek.sh, done/failed sonrasi kilit, yanlis lock path.
+  local tip="${ACTIVE_TIP:-}"
+  local lock_paths=()
+  local lf la any=0 lock_age=0
+
+  if [[ -n "$tip" ]]; then
+    while IFS= read -r lf; do
+      lock_paths+=("$lf")
+    done < <(backup_lock_paths_for_tip "$tip")
+  else
+    lock_paths=("$LOCK_DEFAULT")
+    while IFS= read -r lf; do
+      [[ "$lf" == "$LOCK_DEFAULT" ]] && continue
+      lock_paths+=("$lf")
+    done < <(find /yedek /u01/app/oracle -name '.backup-running' 2>/dev/null || true)
+  fi
+
+  for lf in "${lock_paths[@]}"; do
+    [[ -f "$lf" ]] || continue
+    any=1
+    la="$(backup_lock_age_sec "$lf" || echo 0)"
+    [[ "$la" -gt "$lock_age" ]] && lock_age="$la"
+  done
+  [[ "$any" -eq 1 ]] || return 1
+
+  if backup_work_active; then
+    return 1
+  fi
+
+  local sf state stage age stale_age
+  if [[ -n "$tip" ]]; then
+    sf="$(_resolve_status_file_for_tip "$tip")"
+  else
+    sf="$(_resolve_status_file)"
+  fi
+  state="$(_status_field "$sf" state 2>/dev/null || true)"
+  stage="$(_status_field "$sf" stage 2>/dev/null || true)"
+  age="$(_status_age_sec "$sf" 2>/dev/null || echo -1)"
+
+  if [[ "$state" == "done" || "$state" == "failed" || "$state" == "skipped" ]]; then
+    _wlog "orphan lock reclaim: lock after terminal state=${state}"
+    backup_kill_orphan_yedek_procs
+    if [[ -n "$tip" ]]; then
+      backup_remove_locks_for_tip "$tip"
+    else
+      backup_remove_all_known_locks
+    fi
+    rm -f /yedek/config/ftp-upload.state 2>/dev/null || true
+    return 0
+  fi
+
+  if [[ "${stage:-}" == "ftp_upload" || "${stage:-}" == "notifying" ]]; then
+    return 1
+  fi
+
+  stale_age="$lock_age"
+  if [[ "$age" -gt "$stale_age" ]] 2>/dev/null; then
+    stale_age="$age"
+  fi
+  if [[ "$stale_age" -lt "$LOCK_ORPHAN_SEC" ]]; then
+    return 1
+  fi
+
+  _wlog "orphan lock reclaim: age=${stale_age}s state=${state} stage=${stage} tip=${tip:-?}"
+
+  if backup_local_artifact_complete "$sf"; then
+    _finish_status "$sf" done "orphan lock reclaim: local backup complete"
+  elif [[ "$state" == "running" ]]; then
+    _finish_status "$sf" failed "orphan lock reclaim: no active process"
+  fi
+
+  backup_kill_orphan_yedek_procs
+  if [[ -n "$tip" ]]; then
+    backup_remove_locks_for_tip "$tip"
+  else
+    backup_remove_all_known_locks
+  fi
+  rm -f /yedek/config/ftp-upload.state 2>/dev/null || true
+  return 0
+}
+
+_idle_lock_sweep() {
+  ACTIVE_TIP=""
+  local lf
+  for lf in "$LOCK_DEFAULT" $(find /yedek /u01/app/oracle -name '.backup-running' 2>/dev/null || true); do
+    [[ -f "$lf" ]] || continue
+    LOCK="$lf"
+    reclaim_stale_ftp_lock || reclaim_stale_orphan_lock || true
+  done
+  reclaim_stale_notify_lock || true
 }
 
 reclaim_stale_notify_lock() {
@@ -316,18 +445,29 @@ while true; do
   if [ -f "$TRIGGER" ]; then
     TIP="$(tr -d '[:space:]' <"$TRIGGER")"
     rm -f "$TRIGGER"
+    ACTIVE_TIP="$TIP"
+    LOCK="$(backup_lock_for_tip "$TIP")"
     # Kilit olmasa bile stale notifying status'u temizle
     reclaim_stale_notify_lock || true
-    if [ -f "$LOCK" ]; then
-      if reclaim_stale_ftp_lock || reclaim_stale_notify_lock; then
+    blocked=0
+    while IFS= read -r lf; do
+      [[ -f "$lf" ]] && blocked=1
+    done < <(backup_lock_paths_for_tip "$TIP")
+    if [[ "$blocked" -eq 1 ]]; then
+      if reclaim_stale_ftp_lock || reclaim_stale_notify_lock || reclaim_stale_orphan_lock; then
         _wlog "stale lock reclaimed; continuing tip=$TIP"
       else
-        _wlog "atlandi: zaten calisiyor"
+        if backup_work_active; then
+          _wlog "atlandi: zaten calisiyor (aktif is)"
+        else
+          _wlog "atlandi: kilit var ama reclaim edilemedi tip=$TIP"
+        fi
         sleep 2
         continue
       fi
     fi
     touch "$LOCK"
+    touch "$LOCK_DEFAULT" 2>/dev/null || true
     _wlog "baslatiliyor tip=$TIP"
     RAW_TIP="$TIP"
     if [[ "$RAW_TIP" == *:* ]]; then
@@ -339,13 +479,10 @@ while true; do
       RUNNER="/yedek/config/run-backup.sh"
     fi
     "$RUNNER" "$TIP" || true
-    rm -f "$LOCK"
+    backup_remove_locks_for_tip "$TIP"
+    ACTIVE_TIP=""
   else
-    # Trigger yokken orphan FTP kilidi + orphan notifying status
-    if [ -f "$LOCK" ]; then
-      reclaim_stale_ftp_lock || true
-    fi
-    reclaim_stale_notify_lock || true
+    _idle_lock_sweep
   fi
   sleep 2
 done
