@@ -238,12 +238,24 @@ def authenticate(request: Request, username: str, password: str) -> tuple[bool, 
         local_store = getattr(request.app.state, "local_user_store", None)
         role_store = getattr(request.app.state, "local_role_store", None)
         if local_store:
-            role = local_store.verify(username, password)
-            if role and role_store and not role_store.role_exists(role):
-                role = None
-            if role:
-                _clear_login_failures(ip)
-                return True, "local", role, "ok"
+            local_store.reload_if_changed()
+            local_row = local_store.get_user(username)
+            if local_row is not None:
+                if not local_row.get("enabled", True):
+                    _record_login_failure(ip)
+                    return False, "", "", "Yerel kullanici devre disi"
+                role = local_store.verify(username, password)
+                if role:
+                    if role_store and not role_store.role_exists(role):
+                        _record_login_failure(ip)
+                        return False, "", "", "Yerel kullanici rolu gecersiz"
+                    _clear_login_failures(ip)
+                    return True, "local", role, "ok"
+                _record_login_failure(ip)
+                return False, "", "", "Yerel kullanici sifresi hatali"
+            if auth_mode == "local":
+                _record_login_failure(ip)
+                return False, "", "", "Yerel kullanici bulunamadi"
 
     if auth_mode in ("ldap", "ldap_and_local") and settings:
         ok, role, detail = ldap_login_detail(username, password, settings)

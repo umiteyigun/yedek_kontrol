@@ -65,12 +65,26 @@ class LocalUserStore:
         self._path = path
         self._lock = threading.RLock()
         self._users: dict[str, dict[str, Any]] = {}
+        self._mtime_ns: int | None = None
+        self.load()
+
+    def reload_if_changed(self) -> None:
+        """Disaridan duzenlenen local_users.json degisikliklerini yukler."""
+        try:
+            stat = self._path.stat()
+        except OSError:
+            return
+        mtime_ns = stat.st_mtime_ns
+        with self._lock:
+            if self._mtime_ns == mtime_ns:
+                return
         self.load()
 
     def load(self) -> None:
         with self._lock:
             if not self._path.exists():
                 self._users = {}
+                self._mtime_ns = None
                 return
             try:
                 data = json.loads(self._path.read_text(encoding="utf-8"))
@@ -85,6 +99,10 @@ class LocalUserStore:
                     continue
                 users[username] = row
             self._users = users
+            try:
+                self._mtime_ns = self._path.stat().st_mtime_ns
+            except OSError:
+                self._mtime_ns = None
 
     def _persist(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
