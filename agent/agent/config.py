@@ -13,6 +13,7 @@ class AgentSettings:
     hub_http_url: str
     hub_ws_url: str
     panel_local_url: str
+    shell_local_url: str
     node_label: str
     node_role: str
     hostname: str
@@ -62,6 +63,7 @@ def load_settings() -> AgentSettings:
         hub_http_url=hub_http,
         hub_ws_url=hub_ws,
         panel_local_url=os.getenv("PANEL_LOCAL_URL", "https://127.0.0.1:8443"),
+        shell_local_url=os.getenv("SHELL_LOCAL_URL", "").strip().rstrip("/"),
         node_label=os.getenv("NODE_LABEL", "primary"),
         node_role=os.getenv("NODE_ROLE", "PRIMARY"),
         hostname=hostname,

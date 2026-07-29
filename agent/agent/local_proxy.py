@@ -1,4 +1,4 @@
-"""Yerel yedek panel proxy — HTTP + WebSocket (terminal)."""
+"""Yerel panel + ops-shell proxy — HTTP + WebSocket (terminal)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import base64
 import logging
 import ssl
 from typing import Any, Awaitable, Callable
+from urllib.parse import urlparse
 
 import httpx
 import websockets
@@ -15,10 +16,13 @@ logger = logging.getLogger(__name__)
 
 SendFn = Callable[[dict[str, Any]], Awaitable[None]]
 
+_SHELL_PATH_PREFIXES = ("/terminal", "/ws/terminal")
+
 
 class LocalProxy:
-    def __init__(self, panel_url: str, verify_tls: bool) -> None:
+    def __init__(self, panel_url: str, verify_tls: bool, shell_url: str = "") -> None:
         self.panel_url = panel_url.rstrip("/")
+        self.shell_url = (shell_url or "").rstrip("/")
         self.verify = verify_tls
         self._http: httpx.AsyncClient | None = None
         self._upstream: dict[str, websockets.WebSocketClientProtocol] = {}
@@ -35,12 +39,24 @@ class LocalProxy:
         if self._http:
             await self._http.aclose()
 
+    @staticmethod
+    def _is_shell_path(path: str) -> bool:
+        pure = path.split("?", 1)[0]
+        return any(pure == p or pure.startswith(p + "/") for p in _SHELL_PATH_PREFIXES)
+
+    def _base_url(self, path: str) -> str:
+        if self.shell_url and self._is_shell_path(path):
+            return self.shell_url
+        return self.panel_url
+
     def _ws_url(self, path: str) -> str:
-        base = self.panel_url.replace("https://", "wss://").replace("http://", "ws://")
+        base = self._base_url(path)
+        base = base.replace("https://", "wss://").replace("http://", "ws://")
         return f"{base}{path}"
 
-    def _ssl_context(self) -> ssl.SSLContext | None:
-        if not self.panel_url.startswith("https"):
+    def _ssl_context(self, path: str) -> ssl.SSLContext | None:
+        base = self._base_url(path)
+        if not base.startswith("https"):
             return None
         ctx = ssl.create_default_context()
         if not self.verify:
@@ -51,9 +67,15 @@ class LocalProxy:
     async def handle_http(self, msg: dict[str, Any]) -> dict[str, Any]:
         assert self._http
         path = msg.get("path", "/")
-        url = f"{self.panel_url}{path}"
+        base = self._base_url(path)
+        url = f"{base}{path}"
         body = base64.b64decode(msg.get("body_b64") or "")
         headers = {k: v for k, v in (msg.get("headers") or {}).items() if k.lower() != "host"}
+        # Host header: upstream loopback
+        try:
+            headers["Host"] = urlparse(base).netloc
+        except Exception:
+            pass
         try:
             resp = await self._http.request(msg.get("method", "GET"), url, headers=headers, content=body)
             return {
@@ -100,7 +122,7 @@ class LocalProxy:
                 upstream = await websockets.connect(
                     self._ws_url(path),
                     additional_headers=list(headers.items()),
-                    ssl=self._ssl_context(),
+                    ssl=self._ssl_context(path),
                     open_timeout=30,
                 )
                 self._upstream[ch_id] = upstream
@@ -125,16 +147,16 @@ class LocalProxy:
                 close_reason = str(getattr(upstream, "close_reason", "") or "")
             except Exception as exc:
                 logger.exception("WS open hata: %s", exc)
-                msg = str(exc)
-                if "403" in msg:
+                msg_s = str(exc)
+                if "403" in msg_s:
                     close_code = 4403
                     close_reason = "Panel terminal erisimi reddedildi"
-                elif "4003" in msg:
+                elif "4003" in msg_s:
                     close_code = 4003
                     close_reason = "Baska bir terminal oturumu acik"
                 else:
                     close_code = 1011
-                    close_reason = msg[:120]
+                    close_reason = msg_s[:120]
             finally:
                 self._upstream.pop(ch_id, None)
                 self._tasks.pop(ch_id, None)

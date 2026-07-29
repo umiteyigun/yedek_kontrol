@@ -52,7 +52,13 @@ async def ensure_registered(settings: AgentSettings) -> AgentSettings:
 
 async def run_agent() -> None:
     settings = await ensure_registered(load_settings())
-    proxy = LocalProxy(settings.panel_local_url, settings.verify_tls)
+    proxy = LocalProxy(
+        settings.panel_local_url,
+        settings.verify_tls,
+        shell_url=settings.shell_local_url,
+    )
+    if settings.shell_local_url:
+        logger.info("SHELL_LOCAL_URL=%s (/terminal → ops-shell)", settings.shell_local_url)
     tunnels = TunnelTcpManager()
     await proxy.start()
 
