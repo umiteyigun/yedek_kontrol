@@ -16,6 +16,29 @@ METRICS_INTERVAL_SEC = 900  # 15 dk
 METRICS_INTERVAL_RUNNING_SEC = 15  # yedek calisirken
 
 _CONTAINER_PREFIX = re.compile(r"^(trtek-vlan-|radius-)")
+_IMAGE_ID = re.compile(r"^[0-9a-f]{12,64}$", re.I)
+
+
+def _resolve_container_image(name: str, image: str) -> str:
+    """docker ps bazen tag yerine kisa image id gosterir — Config.Image ile coz."""
+    img = (image or "").strip()
+    if not img or ":" in img or "/" in img or not _IMAGE_ID.match(img):
+        return img
+    try:
+        proc = subprocess.run(
+            ["docker", "inspect", "--format", "{{.Config.Image}}", name],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if proc.returncode == 0:
+            resolved = proc.stdout.strip()
+            if resolved:
+                return resolved
+    except Exception:
+        pass
+    return img
 
 
 def _service_from_container(name: str) -> str:
@@ -33,6 +56,8 @@ def _version_from_image(image: str) -> str:
     last = img.split("/")[-1]
     if ":" in last:
         return last.rsplit(":", 1)[-1] or "latest"
+    if _IMAGE_ID.match(img):
+        return img[:12]
     if last.startswith("ana-proje-") or "/" not in img:
         return "local"
     return "latest"
@@ -58,6 +83,7 @@ def collect_radius_container_images() -> list[dict[str, str]]:
             if len(parts) < 2:
                 continue
             name, image = parts[0], parts[1]
+            image = _resolve_container_image(name, image)
             status_raw = parts[2] if len(parts) > 2 else ""
             rows.append(
                 {
