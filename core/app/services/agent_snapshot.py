@@ -12,7 +12,7 @@ from app.config.store import ConfigStore
 from app.services import backups as backup_service
 from app.services import rman_backups as rman_service
 from app.services.notifications import NotificationService
-from app.services.oracle_probe import instance_runtime_map
+from app.services.oracle_probe import instance_runtime_map, list_instance_user_expiry
 from app.services.oracle_rman_probe import rman_runtime_map
 from app.services.server_info import collect_all_instance_oracle_stats, get_server_info
 
@@ -130,6 +130,16 @@ def collect_agent_snapshot(
                     "backup_type": ritem.backup_type,
                     "backup_type_label": ritem.backup_type_label,
                 }
+        password_expiry: dict[str, Any]
+        if bool(runtime.get("oracle_running")):
+            password_expiry = list_instance_user_expiry(inst.oracle_sid).as_dict()
+        else:
+            password_expiry = {
+                "ok": False,
+                "error": "Oracle kapali",
+                "oracle_sid": inst.oracle_sid,
+                "users": [],
+            }
         instances.append(
             {
                 "id": inst.id,
@@ -148,6 +158,7 @@ def collect_agent_snapshot(
                 "log_mode": rman_rt.get("log_mode"),
                 "archivelog": rman_rt.get("archivelog"),
                 "last_report": last_reports.get(inst.id),
+                "password_expiry": password_expiry,
             }
         )
 

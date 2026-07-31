@@ -621,10 +621,14 @@ def _command_oracle_connectivity(settings: YedekSettings, inst: InstanceSettings
 
 def _command_oracle_user_expiry(settings: YedekSettings, inst: InstanceSettings) -> dict[str, Any]:
     sql = """
-SELECT username, TO_CHAR(expiry_date,'YYYY-MM-DD') expiry_date, account_status
+SELECT username,
+       TO_CHAR(expiry_date,'YYYY-MM-DD') expiry_date,
+       account_status,
+       ROUND(expiry_date - SYSDATE) days_left
 FROM dba_users
-WHERE username IN ('AKILU','SYSTEM','SYS')
-   OR expiry_date < SYSDATE + 60
+WHERE username IN (
+  'AKILU','DBSNMP','PACSDB','SYS','SYSMAN','SYSTEM','TRTEKLOG'
+)
 ORDER BY expiry_date NULLS LAST, username
 """
     ok, rows, err = _sqlplus_csv(inst.oracle_sid, sql)
@@ -1081,7 +1085,7 @@ COMMAND_LABELS: dict[str, str] = {
     "disk_report": "Disk kullanim raporu",
     "backup_inventory": "Son yedekler listesi",
     "oracle_connectivity": "Oracle DB baglanti testi",
-    "oracle_user_expiry": "Oracle DB kullanici suresi (60 gun)",
+    "oracle_user_expiry": "Oracle DB kullanici suresi (AKILU/DBSNMP/PACSDB/SYS/SYSMAN/SYSTEM/TRTEKLOG)",
     "oracle_tablespace_usage": "Tablespace doluluk (top 15)",
     "oracle_invalid_objects": "Gecersiz (INVALID) nesneler",
     "oracle_archivelog_mode": "Archive log modu",

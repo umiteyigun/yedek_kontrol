@@ -14,6 +14,7 @@ HOST_OUTPUT = Path(os.getenv("HOST_OUTPUT", "/host-output"))
 # nsenter -m host mount namespace: /yedek/config/... host yolu
 PROBE_SCRIPT_NSENTER = "/yedek/config/oracle-probe.sh"
 SCHEMAS_SCRIPT_NSENTER = "/yedek/config/oracle-schemas.sh"
+USER_EXPIRY_SCRIPT_NSENTER = "/yedek/config/oracle-user-expiry.sh"
 
 
 @dataclass
@@ -223,6 +224,79 @@ def list_instance_schemas(oracle_sid: str) -> OracleSchemasResult:
         snippet = (stdout or stderr)[:300]
         logger.warning("Oracle schemas JSON parse hatasi sid=%s: %s", sid, snippet)
         return OracleSchemasResult(ok=False, error=f"Gecersiz cevap: {snippet}", oracle_sid=sid)
+
+
+@dataclass
+class OracleUserExpiryResult:
+    ok: bool
+    error: str = ""
+    oracle_sid: str = ""
+    users: list[dict[str, object]] | None = None
+
+    def __post_init__(self) -> None:
+        if self.users is None:
+            self.users = []
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "ok": self.ok,
+            "error": self.error,
+            "oracle_sid": self.oracle_sid,
+            "users": list(self.users or []),
+        }
+
+
+def list_instance_user_expiry(oracle_sid: str) -> OracleUserExpiryResult:
+    """Sabit izlenen Oracle kullanicilarinin sifre bitis ozeti."""
+    sid = (oracle_sid or "").strip()
+    if not sid:
+        return OracleUserExpiryResult(ok=False, error="SID bos", oracle_sid=sid)
+
+    if not is_instance_running(sid):
+        return OracleUserExpiryResult(
+            ok=False,
+            error=f"Oracle instance ayakta degil (SID={sid})",
+            oracle_sid=sid,
+        )
+
+    code, stdout, stderr = _run_on_host(Path(USER_EXPIRY_SCRIPT_NSENTER), sid, timeout=60)
+    payload = stdout
+    if not payload and stderr:
+        return OracleUserExpiryResult(ok=False, error=stderr, oracle_sid=sid)
+
+    try:
+        data = json.loads(payload.splitlines()[-1])
+        users: list[dict[str, object]] = []
+        for row in data.get("users") or []:
+            if not isinstance(row, dict):
+                continue
+            username = str(row.get("username") or "").strip()
+            if not username:
+                continue
+            days_raw = row.get("days_left")
+            days_left: int | None
+            try:
+                days_left = int(days_raw) if days_raw is not None and str(days_raw).strip() != "" else None
+            except (TypeError, ValueError):
+                days_left = None
+            users.append(
+                {
+                    "username": username,
+                    "account_status": str(row.get("account_status") or "").strip(),
+                    "expiry_date": (str(row.get("expiry_date") or "").strip() or None),
+                    "days_left": days_left,
+                }
+            )
+        return OracleUserExpiryResult(
+            ok=bool(data.get("ok")),
+            error=str(data.get("error") or ""),
+            oracle_sid=str(data.get("oracle_sid") or sid),
+            users=users,
+        )
+    except json.JSONDecodeError:
+        snippet = (stdout or stderr)[:300]
+        logger.warning("Oracle user-expiry JSON parse hatasi sid=%s: %s", sid, snippet)
+        return OracleUserExpiryResult(ok=False, error=f"Gecersiz cevap: {snippet}", oracle_sid=sid)
 
 
 def probe_all_instances(settings_dict: dict) -> tuple[dict[str, OracleProbeResult], list[str]]:

@@ -29,6 +29,7 @@ install -m 755 "$ROOT/scripts/run-backup.sh" /yedek/config/run-backup.sh
 install -m 755 "$ROOT/scripts/backup-watcher.sh" /yedek/config/backup-watcher.sh
 install -m 755 "$ROOT/scripts/oracle-probe.sh" /yedek/config/oracle-probe.sh
 install -m 755 "$ROOT/scripts/oracle-schemas.sh" /yedek/config/oracle-schemas.sh
+install -m 755 "$ROOT/scripts/oracle-user-expiry.sh" /yedek/config/oracle-user-expiry.sh
 install -m 755 "$ROOT/scripts/oracle-rman-probe.sh" /yedek/config/oracle-rman-probe.sh
 install -m 755 "$ROOT/scripts/oracle-stats.sh" /yedek/config/oracle-stats.sh
 install -m 755 "$ROOT/scripts/oracle-tablespaces.sh" /yedek/config/oracle-tablespaces.sh
