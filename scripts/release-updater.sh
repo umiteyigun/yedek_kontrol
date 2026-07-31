@@ -65,7 +65,7 @@ fi
 : "${RELEASE_REGISTRY_USER:=oauth2}"
 : "${RELEASE_SKIP_PULL:=0}"
 # compose up sonrasi core hemen hazir olmayabilir — health retry
-: "${RELEASE_HEALTH_URL:=http://127.0.0.1:8090/health}"
+: "${RELEASE_HEALTH_URL:=http://127.0.0.1:18090/health}"
 : "${RELEASE_HEALTH_RETRIES:=40}"
 : "${RELEASE_HEALTH_INTERVAL:=3}"
 : "${RELEASE_HEALTH_CURL_MAX:=5}"
@@ -814,7 +814,7 @@ EOF
     local attempt=1
     local max="${RELEASE_HEALTH_RETRIES:-40}"
     local interval="${RELEASE_HEALTH_INTERVAL:-3}"
-    local url="${RELEASE_HEALTH_URL:-http://127.0.0.1:8090/health}"
+    local url="${RELEASE_HEALTH_URL:-http://127.0.0.1:18090/health}"
     local curl_max="${RELEASE_HEALTH_CURL_MAX:-5}"
     local core_st=""
     [[ "$max" =~ ^[0-9]+$ ]] || max=40

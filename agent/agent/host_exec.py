@@ -40,7 +40,7 @@ ALLOWLIST: dict[str, dict[str, Any]] = {
         "timeout": 30.0,
     },
     "health_curl": {
-        "argv": ["curl", "-sf", "--max-time", "5", "http://127.0.0.1:8090/health"],
+        "argv": ["curl", "-sf", "--max-time", "5", "http://127.0.0.1:18090/health"],
         "timeout": 15.0,
     },
 }
