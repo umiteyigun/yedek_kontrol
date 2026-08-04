@@ -417,10 +417,11 @@ backup_current_instance() {
       fi
       ;;
     gzip|*)
+      # compression=all: ham ~10x dump yazimini onler; ayni diskte 27G+ gzip felaketini engeller
       if [[ "$yedektipi" == "GUNLUK" ]]; then
-        run_expdp_allow_warnings "${expdp_common[@]}" schemas="$schemas"
+        run_expdp_allow_warnings "${expdp_common[@]}" schemas="$schemas" compression=all
       else
-        run_expdp_allow_warnings "${expdp_common[@]}" full=y flashback_time=systimestamp
+        run_expdp_allow_warnings "${expdp_common[@]}" full=y flashback_time=systimestamp compression=all
       fi
       ;;
   esac
@@ -435,12 +436,22 @@ backup_current_instance() {
     free -m 2>/dev/null || free
   } >> "${directorydizini}${logdosyaadi}" 2>&1
 
+  # Post-gzip Oracle data ile ayni diskte idle-class I/O kullansin (D-state / iowait felaketi)
+  run_idle_gzip() {
+    local src="$1"
+    if command -v ionice >/dev/null 2>&1; then
+      nice -n 19 ionice -c 3 gzip -f "$src"
+    else
+      nice -n 19 gzip -f "$src"
+    fi
+  }
+
   artifact_path=""
   bs_stage_if_available compressing
   case "$backup_protect_mode" in
     oracle)
       log "Oracle sifreli yedek sikistiriliyor [${INSTANCE_ID}]: ${directorydizini}${dmpdosyaadi}"
-      gzip -f "${directorydizini}${dmpdosyaadi}"
+      run_idle_gzip "${directorydizini}${dmpdosyaadi}"
       artifact_path="${directorydizini}${gzipdosyaadi}"
       uploaddosyaadi="$gzipdosyaadi"
       log "Oracle sifreli yedek hazir [${INSTANCE_ID}]: ${artifact_path}"
@@ -453,8 +464,8 @@ backup_current_instance() {
       uploaddosyaadi="$zipdosyaadi"
       ;;
     gzip|*)
-      log "Sikistiriliyor [${INSTANCE_ID}]: ${directorydizini}${dmpdosyaadi}"
-      gzip -f "${directorydizini}${dmpdosyaadi}"
+      log "Sikistiriliyor (idle I/O) [${INSTANCE_ID}]: ${directorydizini}${dmpdosyaadi}"
+      run_idle_gzip "${directorydizini}${dmpdosyaadi}"
       artifact_path="${directorydizini}${gzipdosyaadi}"
       uploaddosyaadi="$gzipdosyaadi"
       ;;
