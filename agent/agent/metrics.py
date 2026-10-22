@@ -179,6 +179,11 @@ async def send_metrics_report(ws, settings) -> dict | None:
         )
         snapshot = await asyncio.to_thread(enrich_radius_snapshot, snapshot)
         snapshot = apply_agent_products(snapshot)
+        if "uyg" in configured_products():
+            from agent.uyg_compose import SYNC, uyg_report
+
+            snapshot = {**snapshot, "uyg": uyg_report()}
+            asyncio.create_task(SYNC.recheck())
         await ws.send(json.dumps({"type": "metrics_report", "payload": snapshot}))
         logger.info(
             "Metrik gonderildi: instances=%s containers=%s",

@@ -14,6 +14,7 @@ from agent.config import AgentSettings, load_settings, save_registration
 from agent.host_exec import handle_host_exec
 from agent.local_proxy import LocalProxy
 from agent.metrics import metrics_loop, send_metrics_report
+from agent.uyg_compose import SYNC
 from agent.tunnel_tcp import TunnelTcpManager
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -158,6 +159,10 @@ async def run_agent() -> None:
                         elif mtype == "host_exec":
                             resp = await handle_host_exec(msg)
                             await ws.send(json.dumps(resp))
+                        elif mtype == "uyg_sync":
+                            repos = msg.get("repos")
+                            if isinstance(repos, list):
+                                asyncio.create_task(SYNC.submit(repos))
                 finally:
                     hb.cancel()
                     metrics.cancel()
