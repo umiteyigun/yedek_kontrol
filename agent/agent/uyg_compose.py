@@ -26,6 +26,7 @@ _ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,40}$")
 _ENV_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 _PORT_RE = re.compile(r"^[0-9]{1,5}$")
 _NAME_RE = re.compile(r"^uyg-[A-Za-z0-9][A-Za-z0-9_.-]{0,80}$")
+_IP_RE = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
 
 _compose_bin: list[str] | None = None
 
@@ -192,6 +193,47 @@ def _write(text: str) -> None:
             pass
 
 
+def _ipv4(text: str) -> str:
+    if not _IP_RE.fullmatch(text):
+        return ""
+    if any(int(part) > 255 for part in text.split(".")):
+        return ""
+    return text
+
+
+def listen_ip() -> str:
+    """Varsayilan ag gecidinin bulundugu bloktaki yerel adres."""
+    route = _host(["ip", "-4", "route", "show", "default"], timeout=10)
+    if not route["ok"]:
+        return ""
+    gateway = ""
+    for line in str(route["stdout"]).splitlines():
+        parts = line.split()
+        if "via" in parts:
+            gateway = parts[parts.index("via") + 1]
+            break
+    gateway = _ipv4(gateway)
+    if not gateway:
+        return ""
+    got = _host(["ip", "-4", "route", "get", gateway], timeout=10)
+    if not got["ok"]:
+        return ""
+    parts = str(got["stdout"]).split()
+    if "src" not in parts:
+        return ""
+    return _ipv4(parts[parts.index("src") + 1])
+
+
+def _published_port(ports: str) -> str:
+    match = re.search(r":(\d+)->", ports or "")
+    if not match:
+        return ""
+    number = int(match.group(1))
+    if number < 1 or number > 65535:
+        return ""
+    return str(number)
+
+
 def _version_of(image: str) -> str:
     last = image.rsplit("/", 1)[-1]
     if ":" not in last:
@@ -208,7 +250,7 @@ def _containers() -> list[dict[str, str]]:
             "--filter",
             "label=com.docker.compose.project=uyg",
             "--format",
-            "{{.Label \"com.docker.compose.service\"}}\t{{.Names}}\t{{.Image}}\t{{.Status}}",
+            "{{.Label \"com.docker.compose.service\"}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}",
         ],
         timeout=20,
     )
@@ -220,6 +262,7 @@ def _containers() -> list[dict[str, str]]:
         if len(parts) < 4:
             continue
         service, name, image, status = (part.strip() for part in parts[:4])
+        ports = parts[4].strip() if len(parts) > 4 else ""
         if not _ID_RE.fullmatch(service) or not _NAME_RE.fullmatch(name):
             continue
         rows.append(
@@ -228,6 +271,7 @@ def _containers() -> list[dict[str, str]]:
                 "name": name,
                 "image": image,
                 "status": status,
+                "ports": ports,
                 "version": _version_of(image),
                 "up": "1" if status.startswith("Up") else "",
             }
@@ -324,14 +368,19 @@ def uyg_report() -> dict[str, list]:
     if not _uyg_enabled():
         return {"repos": []}
     try:
-        rows = [
-            {
-                "id": item["service"],
-                "version": item["version"],
-                "status": "running" if item["up"] else "stopped",
-            }
-            for item in _containers()
-        ]
+        ip = listen_ip()
+        rows = []
+        for item in _containers():
+            running = bool(item["up"])
+            port = _published_port(item.get("ports", "")) if running else ""
+            rows.append(
+                {
+                    "id": item["service"],
+                    "version": item["version"],
+                    "status": "running" if running else "stopped",
+                    "endpoint": f"{ip}:{port}" if ip and port else "",
+                }
+            )
     except Exception:
         logger.warning("uyg durum okunamadi")
         return {"repos": []}
