@@ -135,7 +135,6 @@ def render_compose(repos: list) -> tuple[str, list[dict[str, str]], list[str], b
     for item in pinned:
         lines.append(f"  {item['id']}:")
         lines.append(f"    image: {item['image']}")
-        lines.append("    pull_policy: never")
         lines.append(f"    container_name: uyg-{item['id']}")
         lines.append("    restart: unless-stopped")
         env = item["env"]
@@ -191,11 +190,6 @@ def _write(text: str) -> None:
             path.unlink()
         except OSError:
             pass
-
-
-def _image_present(image: str) -> bool:
-    result = _host(["docker", "image", "inspect", "--format", "{{.Id}}", image], timeout=20)
-    return bool(result["ok"]) and bool(str(result["stdout"]).strip())
 
 
 def _version_of(image: str) -> str:
@@ -258,15 +252,16 @@ def _up(service_ids: list[str], *, orphans: bool) -> None:
     argv = [*compose, "-p", "uyg", "-f", COMPOSE_PATH, "up", "-d", "--no-deps"]
     if orphans:
         argv.append("--remove-orphans")
-    argv.extend(["--pull", "never", *service_ids])
-    result = _host(argv, timeout=120)
-    if not result["ok"] and "unknown flag" in str(result["stderr"]):
-        argv = [item for item in argv if item not in {"--pull", "never"}]
-        result = _host(argv, timeout=120)
+    argv.extend(service_ids)
+    result = _host(argv, timeout=600)
     if result["ok"]:
         logger.info("uyg compose up services=%s", ",".join(service_ids))
     else:
-        logger.warning("uyg compose up olmadi code=%s", result["code"])
+        detail = ""
+        lines = str(result["stderr"]).splitlines()
+        if lines:
+            detail = lines[-1][:200]
+        logger.warning("uyg compose up olmadi code=%s %s", result["code"], detail)
 
 
 def _down() -> None:
@@ -312,10 +307,7 @@ def apply_repos(repos: list) -> None:
         if containers:
             _down()
         return
-    missing = [item["id"] for item in pinned if not _image_present(item["image"])]
-    runnable = [item["id"] for item in pinned if item["id"] not in missing]
-    if missing:
-        logger.info("uyg imaj yok, baslatilmadi: %s", ",".join(missing))
+    runnable = [item["id"] for item in pinned]
     if not runnable:
         return
     running = {item["service"] for item in containers if item["up"] and item["service"] in keep}
