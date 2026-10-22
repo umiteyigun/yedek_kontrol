@@ -13,7 +13,7 @@ import websockets
 from agent.config import AgentSettings, load_settings, save_registration
 from agent.host_exec import handle_host_exec
 from agent.local_proxy import LocalProxy
-from agent.metrics import metrics_loop, send_metrics_report
+from agent.metrics import metrics_loop, send_metrics_report, uyg_status_loop
 from agent.uyg_compose import SYNC
 from agent.tunnel_tcp import TunnelTcpManager
 
@@ -102,6 +102,7 @@ async def run_agent() -> None:
                 metrics = asyncio.create_task(
                     metrics_loop(ws, settings, lambda: bool(ack.get("proxy_enabled")))
                 )
+                uyg_status = asyncio.create_task(uyg_status_loop(ws))
                 if proxy_enabled:
                     asyncio.create_task(send_metrics_report(ws, settings))
                 try:
@@ -166,6 +167,7 @@ async def run_agent() -> None:
                 finally:
                     hb.cancel()
                     metrics.cancel()
+                    uyg_status.cancel()
                     await tunnels.close_all()
         except Exception as exc:
             logger.warning("Baglanti koptu: %s — 5s sonra yeniden", exc)

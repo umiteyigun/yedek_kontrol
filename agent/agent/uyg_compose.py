@@ -243,6 +243,7 @@ def _remove(name: str) -> None:
         logger.info("uyg kaldirildi: %s", name)
     else:
         logger.warning("uyg kaldirilamadi: %s code=%s", name, result["code"])
+    poke_status()
 
 
 def _up(service_ids: list[str], *, orphans: bool) -> None:
@@ -262,6 +263,7 @@ def _up(service_ids: list[str], *, orphans: bool) -> None:
         if lines:
             detail = lines[-1][:200]
         logger.warning("uyg compose up olmadi code=%s %s", result["code"], detail)
+    poke_status()
 
 
 def _down() -> None:
@@ -276,6 +278,7 @@ def _down() -> None:
         logger.info("uyg durduruldu")
     else:
         logger.warning("uyg durdurulamadi code=%s", result["code"])
+    poke_status()
 
 
 def apply_repos(repos: list) -> None:
@@ -341,6 +344,8 @@ class UygSync:
         self._latest: list | None = None
         self._last: list | None = None
         self._busy = False
+        self.changed = asyncio.Event()
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     async def submit(self, repos: list) -> None:
         async with self._lock:
@@ -368,6 +373,13 @@ class UygSync:
                 await asyncio.to_thread(apply_repos, batch)
             except Exception:
                 logger.exception("uyg compose uygulanamadi")
+
+
+def poke_status() -> None:
+    loop = SYNC._loop
+    if loop is None or loop.is_closed():
+        return
+    loop.call_soon_threadsafe(SYNC.changed.set)
 
 
 SYNC = UygSync()

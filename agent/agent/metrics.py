@@ -16,6 +16,7 @@ logger = logging.getLogger("yedek-agent.metrics")
 
 METRICS_INTERVAL_SEC = 900  # 15 dk
 METRICS_INTERVAL_RUNNING_SEC = 15  # yedek calisirken
+UYG_STATUS_SEC = 60
 
 _CONTAINER_PREFIX = re.compile(r"^(trtek-vlan-|radius-)")
 _IMAGE_ID = re.compile(r"^[0-9a-f]{12,64}$", re.I)
@@ -203,6 +204,31 @@ def _backup_is_running(snapshot: dict | None) -> bool:
     if isinstance(status, dict) and str(status.get("state") or "") == "running":
         return True
     return False
+
+
+async def uyg_status_loop(ws) -> None:
+    """Calisan repo surumunu hub'a yazar. Yedek metriginden bagimsiz."""
+    from agent.uyg_compose import SYNC, uyg_report
+
+    SYNC._loop = asyncio.get_running_loop()
+    while True:
+        if "uyg" in configured_products():
+            try:
+                report = await asyncio.to_thread(uyg_report)
+                await ws.send(json.dumps({"type": "uyg_status", "payload": report}))
+                summary = ",".join(
+                    f"{item.get('id')}={item.get('version')}:{item.get('status')}"
+                    for item in report.get("repos") or []
+                    if isinstance(item, dict)
+                )
+                logger.info("uyg durum: %s", summary or "-")
+            except Exception as exc:
+                logger.warning("uyg durum gonderilemedi: %s", exc)
+        try:
+            await asyncio.wait_for(SYNC.changed.wait(), timeout=UYG_STATUS_SEC)
+        except asyncio.TimeoutError:
+            pass
+        SYNC.changed.clear()
 
 
 async def metrics_loop(ws, settings, is_enabled) -> None:
