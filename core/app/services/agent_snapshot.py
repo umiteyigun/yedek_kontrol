@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -88,6 +89,28 @@ def _last_reports_by_instance(
         if not prev or str(entry.get("received_at", "")) > str(prev.get("received_at", "")):
             by_inst[best_id] = entry
     return by_inst
+
+
+def _configured_products() -> list[str]:
+    chunks: list[str] = []
+    env = os.getenv("AGENT_PRODUCTS", "")
+    if env.strip():
+        chunks.append(env)
+    path = Path(os.getenv("AGENT_PRODUCTS_FILE", "/yedek/config/products"))
+    try:
+        if path.is_file():
+            chunks.append(path.read_text(encoding="utf-8"))
+    except OSError:
+        pass
+    found: list[str] = []
+    for chunk in chunks:
+        for line in chunk.splitlines():
+            line = line.split("#", 1)[0]
+            for piece in line.replace(";", ",").split(","):
+                token = piece.strip().lower()
+                if token and token not in found:
+                    found.append(token)
+    return found or ["yedek"]
 
 
 def collect_agent_snapshot(
@@ -184,6 +207,7 @@ def collect_agent_snapshot(
 
     return {
         "reported_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "products": _configured_products(),
         "config_version": store.version,
         "instance_count": len(instances),
         "host": host,

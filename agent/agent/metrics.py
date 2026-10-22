@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import subprocess
+from pathlib import Path
 
 import httpx
 
@@ -101,6 +103,49 @@ def collect_radius_container_images() -> list[dict[str, str]]:
         return []
 
 
+def configured_products() -> list[str]:
+    """Ajan urun listesi. Dosya veya AGENT_PRODUCTS bos ise bildirim oldugu gibi kalir."""
+    chunks: list[str] = []
+    env = os.getenv("AGENT_PRODUCTS", "")
+    if env.strip():
+        chunks.append(env)
+    path = Path(os.getenv("AGENT_PRODUCTS_FILE", "/yedek/config/products"))
+    try:
+        if path.is_file():
+            chunks.append(path.read_text(encoding="utf-8"))
+    except OSError:
+        pass
+    found: list[str] = []
+    for chunk in chunks:
+        for line in chunk.splitlines():
+            line = line.split("#", 1)[0]
+            for piece in line.replace(";", ",").split(","):
+                token = piece.strip().lower()
+                if token and token not in found:
+                    found.append(token)
+    return found
+
+
+def apply_agent_products(snapshot: dict) -> dict:
+    extra = configured_products()
+    if not extra:
+        return snapshot
+    current: list[str] = []
+    raw = snapshot.get("products")
+    if isinstance(raw, list):
+        for item in raw:
+            token = str(item or "").strip().lower()
+            if token and token not in current:
+                current.append(token)
+    single = str(snapshot.get("product") or "").strip().lower()
+    if single and single not in current:
+        current.append(single)
+    for token in extra:
+        if token not in current:
+            current.append(token)
+    return {**snapshot, "products": current}
+
+
 def enrich_radius_snapshot(snapshot: dict) -> dict:
     if snapshot.get("product") != "radius":
         return snapshot
@@ -133,6 +178,7 @@ async def send_metrics_report(ws, settings) -> dict | None:
             verify_tls=settings.verify_tls,
         )
         snapshot = await asyncio.to_thread(enrich_radius_snapshot, snapshot)
+        snapshot = apply_agent_products(snapshot)
         await ws.send(json.dumps({"type": "metrics_report", "payload": snapshot}))
         logger.info(
             "Metrik gonderildi: instances=%s containers=%s",
